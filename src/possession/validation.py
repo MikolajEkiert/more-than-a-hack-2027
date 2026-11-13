@@ -208,6 +208,7 @@ def degrade(
     visible_dead_prob: float = 0.5,
     visible_dead_s: tuple[float, float] = (0.5, 3.0),
     ball_offset_m: float = 0.5,
+    ball_smooth_s: float = 0.6,
     players_visible: float = 20.5,
 ) -> Match:
     """A copy of a clean external match made to look like automatic tracking.
@@ -219,6 +220,8 @@ def degrade(
       * after some stoppages begin the ball stays visible for `visible_dead_s`, rolling on
       * corrected tracking pins the ball to the player in possession; a slowly varying offset of
         `ball_offset_m` (standard deviation) pulls it off again
+      * corrected ball tracks change velocity within a frame at every event, an automatic one
+        is smoother: a moving average of `ball_smooth_s` over the ball's position blurs kicks
       * tracks drop out until `players_visible` players are visible on average
     What it does not reproduce: identity switches, duplicated players, a ball visible but wrong,
     and which moments the real tracker loses (it is not random). The shares above are parameters,
@@ -254,6 +257,16 @@ def degrade(
             axis=1,
         )
         ball[:, :2] += smooth * ball_offset_m * np.sqrt(window)
+
+    # 2b. the tracker's own smoothing of the ball, within each tracked stretch
+    window = int(round(ball_smooth_s * fps))
+    if window > 1:
+        tracked = ~np.isnan(ball[:, 0])
+        kernel = np.ones(window)
+        count = np.convolve(tracked.astype(np.float64), kernel, mode="same")
+        for axis in (0, 1):
+            total = np.convolve(np.where(tracked, ball[:, axis], 0.0), kernel, mode="same")
+            ball[:, axis] = np.where(tracked, total / np.maximum(count, 1.0), np.nan)
 
     # 3. the ball is lost for long stretches of live play
     hidden = np.zeros(n, dtype=bool)

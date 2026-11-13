@@ -1,0 +1,12 @@
+# The unsupervised control version: label-free evidence, hand-set parameters, no fitting.
+# Every later version (EM, pseudo-labels) has to beat this on `make validate`.
+name = "unsup_control"
+
+[ball_state]
+method = "stoppage_evidence"
+
+[team]
+method = "control_evidence"
+
+[decode]
+method = "switch_cost"

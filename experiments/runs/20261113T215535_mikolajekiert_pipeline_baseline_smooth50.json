@@ -1,0 +1,54 @@
+{
+  "author": "MikolajEkiert",
+  "config": {
+    "ball_state": {
+      "method": "ball_visible"
+    },
+    "decode": {
+      "method": "majority_vote",
+      "window": 50
+    },
+    "game": null,
+    "name": "pipeline_baseline_smooth50",
+    "team": {
+      "method": "nearest_player"
+    }
+  },
+  "config_path": "configs/baseline_smooth50.toml",
+  "csv_sha256": "",
+  "diagnostics": {
+    "fps": 25,
+    "home_share": 0.4922,
+    "label_share_graded": {
+      "A": 0.35,
+      "D": 0.3108,
+      "H": 0.3393,
+      "X": 0.0
+    },
+    "mean_possession_s": 7.0,
+    "n_frames": 143761,
+    "n_possessions": 564
+  },
+  "external": {
+    "alive_dead_f1": 0.9056,
+    "condition": "degraded(seed=0)",
+    "game": "metrica-sg3",
+    "macroF1": 0.7604,
+    "n_gt_possessions": 386,
+    "n_pred_possessions": 564,
+    "spellF1": 0.3208,
+    "spellF1_interval": [
+      0.2976,
+      0.3503
+    ],
+    "team_acc_both_alive": 0.8207
+  },
+  "git_branch": "task/03-stoppage-evidence",
+  "git_commit": "8fef60b",
+  "git_dirty": true,
+  "name": "pipeline_baseline_smooth50",
+  "note": "task 03-05: control version vs baseline windows, degraded Metrica SG3 with ball smoothing 0.6 s",
+  "public_sanity": null,
+  "seconds": 0.0,
+  "time_utc": "2026-11-13T21:55:35Z"
+}

@@ -1,6 +1,6 @@
 ---
-status: todo
-owner:
+status: doing
+owner: MikolajEkiert (Claude)
 stage: ball_state
 ---
 
@@ -32,3 +32,9 @@ window starts 2,934 frames of D before the kickoff.
 - [ ] `make check` green
 
 ## Log
+- 2026-11-13 · MikolajEkiert/Claude · `ball_state.stoppage_evidence` added. Synthetic tests: ball
+  out of bounds lowers the evidence; no ball and nobody running is a stoppage; no ball with
+  players sprinting is far less sure. External match (degraded): alive/dead F1 0.956 against
+  0.906 for `ball_visible`, as part of `unsup_control`. On the match: D share 44.8%, 358
+  possessions. Parameters are in seconds, metres and m/s; no frame constants. Not done: fitting
+  the cue parameters on the match (EM), the kick-off rule before the second half.
