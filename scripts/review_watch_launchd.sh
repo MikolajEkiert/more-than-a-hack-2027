@@ -43,6 +43,8 @@ case "${1:-}" in
 </dict></plist>
 PL
     launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+    # bootout is asynchronous (it waits for a running review); bootstrap fails until it is done.
+    for _ in $(seq 1 60); do launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || break; sleep 2; done
     launchctl bootstrap "gui/$(id -u)" "$PLIST"
     echo "installed: every ${2:-300}s, log $LOG_DIR/review.log"
     echo "(re-run install after changing scripts/pr_review_watch.sh to update the job's copy)" ;;
