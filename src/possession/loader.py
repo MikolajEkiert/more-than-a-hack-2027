@@ -18,7 +18,7 @@ import numpy as np
 from possession._paths import CACHE_DIR
 from possession.match import Match
 
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 FIELD_SEP, GROUP_SEP = ":", ";"
 N_FIELDS = 3  # x, y, speed
 
@@ -43,7 +43,7 @@ def parse_atd_raw(raw_path: str, n_frames: int, n_slots: int, pitch: tuple[float
                 continue
             ball[frame] = _group(parts[2])
             flat = parts[1].replace(GROUP_SEP, ",").split(",")
-            if len(flat) == n_slots * N_FIELDS:
+            if len(flat) == n_slots * N_FIELDS and "" not in flat:
                 players[frame] = np.array(flat, dtype=np.float64).reshape(n_slots, N_FIELDS)
             else:
                 groups = parts[1].split(GROUP_SEP)[:n_slots]
@@ -57,7 +57,7 @@ def parse_atd_raw(raw_path: str, n_frames: int, n_slots: int, pitch: tuple[float
 
 
 def _group(text: str) -> np.ndarray:
-    values = text.strip().split(",")[:N_FIELDS]
+    values = [v.strip() or "nan" for v in text.strip().split(",")[:N_FIELDS]]
     out = np.full(N_FIELDS, np.nan)
     out[: len(values)] = np.array(values, dtype=np.float64)
     return out
@@ -81,7 +81,7 @@ def load_match(game: str | None = None, rebuild: bool = False, verbose: bool = T
     meta_path, raw_path = games.require(["atd_meta", "atd_raw"], game)
     n_frames = games.source_frames("tactical", game)
     pitch = tuple(games.GAMES[game]["pitch"])
-    key = _cache_key(game, [meta_path, raw_path])
+    key = _cache_key(game, [meta_path, raw_path], pitch)
     cache_path = CACHE_DIR / f"{game}_match.npz"
 
     arrays = None if rebuild else _read_cache(cache_path, key)
@@ -118,9 +118,10 @@ def _load_tagging(game: str):
         return None
 
 
-def _cache_key(game: str, paths: list[str]) -> str:
+def _cache_key(game: str, paths: list[str], pitch: tuple[float, float]) -> str:
+    """Changes when the source files or anything used to scale them (pitch) change."""
     stats = [(os.path.basename(p), os.path.getsize(p), int(os.path.getmtime(p))) for p in paths]
-    return json.dumps({"v": CACHE_VERSION, "game": game, "files": stats})
+    return json.dumps({"v": CACHE_VERSION, "game": game, "pitch": list(pitch), "files": stats})
 
 
 def _read_cache(path, key):

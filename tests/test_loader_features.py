@@ -25,6 +25,14 @@ def test_parse_atd_raw(tmp_path):
     assert np.isnan(ball[2]).all() and np.isnan(players[2]).all()  # never seen -> NaN
 
 
+def test_empty_fields_are_missing(tmp_path):
+    raw = tmp_path / "atd.txt"
+    raw.write_text("1:0.1,0.2,1.0;,,:,,\n")
+    ball, players = parse_atd_raw(str(raw), n_frames=1, n_slots=2, pitch=PITCH)
+    np.testing.assert_allclose(players[0, 0], [10.0, 10.0, 1.0])
+    assert np.isnan(players[0, 1]).all() and np.isnan(ball[0]).all()
+
+
 def test_nearest_player_matches_brute_force():
     match = make_match(n=500, seed=3)
     distance, team = features.nearest_player(match)
