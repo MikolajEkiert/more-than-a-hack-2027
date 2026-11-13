@@ -41,6 +41,7 @@ SENSITIVE_SHELL = re.compile(
 )
 INLINE_PYTHON = re.compile(r"python[0-9.]*\s+(-c\b|-\s|<<)|ipython|jupyter\s+(console|nbconvert)")
 DATA_API = re.compile(r"load_match|asset_paths|games\.require|np\.load|read_csv|kloppy|\.npz")
+AGGREGATE_TOOLS = ("uv run possession", "uv run pytest", "make check", "make test", "make lint")
 SAFE_PREFIXES = (
     "uv run possession",
     "uv run pytest",
@@ -106,7 +107,10 @@ def shell_reason(command: str) -> str | None:
     if not guard_on():
         return None
     stripped = command.strip()
-    if stripped.startswith(SAFE_PREFIXES) and not re.search(r"[|;&]|\bcat\b|\bhead\b", stripped):
+    chained = re.search(r"[|;&<>`$]", stripped)
+    # Our own tools print aggregates only, so they may name data paths (e.g. --csv). Anything else
+    # that names a data path is denied, whatever it starts with (git diff --no-index data/x ...).
+    if stripped.startswith(AGGREGATE_TOOLS) and not chained:
         return None
     if SENSITIVE_SHELL.search(command):
         return (

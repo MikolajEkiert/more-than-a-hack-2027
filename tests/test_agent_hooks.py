@@ -75,6 +75,8 @@ class TestGuardOn:
         for cmd in (
             "head -n 5 data/tactical/BAR-ATH_tactical_atd.txt",
             "uv run possession run configs/x.toml | cat data/x",
+            "git diff --no-index data/tactical/BAR-ATH_tactical_atd.txt /dev/null",
+            "make run > /tmp/x && tail data/x",
             "python -c 'from possession.loader import load_match; print(load_match().ball)'",
         ):
             assert agent_hooks.shell_reason(cmd), cmd

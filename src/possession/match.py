@@ -17,8 +17,8 @@ class Match:
     game: str
     fps: int
     pitch: tuple[float, float]  # (length, width) in metres
-    ball: np.ndarray  # (n, 3) float32: x_m, y_m, speed_m_s; NaN where not tracked
-    players: np.ndarray  # (n, S, 3) float32: x_m, y_m, speed_m_s per track slot; NaN if absent
+    ball: np.ndarray  # (n, 3) float64: x_m, y_m, speed_m_s; NaN where not tracked
+    players: np.ndarray  # (n, S, 3) float64: x_m, y_m, speed_m_s per track slot; NaN if absent
     team_of_track: np.ndarray  # (S,) int8: HOME or AWAY for each slot
     half: np.ndarray  # (n,) int8: 1 or 2 inside a graded half, 0 outside (boundaries, not labels)
     # Smart Tagging, [{code, start_frame, end_frame, start_s, end_s, tags}], or None if absent.
