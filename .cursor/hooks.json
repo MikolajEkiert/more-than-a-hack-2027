@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      { "command": "python3 scripts/agent_hooks.py session --tool cursor" }
+    ],
+    "beforeReadFile": [
+      { "command": "python3 scripts/agent_hooks.py read --tool cursor" }
+    ],
+    "beforeShellExecution": [
+      { "command": "python3 scripts/agent_hooks.py shell --tool cursor" }
+    ],
+    "afterFileEdit": [
+      { "command": "python3 scripts/agent_hooks.py format --tool cursor" }
+    ]
+  }
+}

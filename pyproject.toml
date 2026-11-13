@@ -1,0 +1,50 @@
+[project]
+name = "possession"
+version = "0.1.0"
+description = "More than a Hack 2027, Phase 1: frame-level ball possession (H/A/D/X)."
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "numpy",
+    "pandas",
+    # Pinned by the organisers: the version the Metrica FIFA/EPTS export is known to load under.
+    "kloppy==3.18.0",
+    "matplotlib",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+    "pre-commit",
+    "nbstripout",
+    "notebook",
+]
+
+[project.scripts]
+possession = "possession.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/possession"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# Organiser-owned code is never reformatted: a diff there breaks scripts/check_repo.py.
+extend-exclude = ["evaluation", "starter", "games.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "NPY"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["possession", "games", "possession_metrics", "starter", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "src", "evaluation"]
+addopts = "-q"
+markers = ["needs_data: requires the match data in data/ (skipped otherwise)"]

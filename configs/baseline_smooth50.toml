@@ -1,0 +1,14 @@
+# The organisers' published floor (spellF1 0.2433 on the full match), rebuilt from registered
+# methods. tests/test_baseline_equivalence.py checks it reproduces
+# evaluation/results/baseline_smooth50.csv exactly on the official data.
+name = "pipeline_baseline_smooth50"
+
+[ball_state]
+method = "ball_visible"
+
+[team]
+method = "nearest_player"
+
+[decode]
+method = "majority_vote"
+window = 50
