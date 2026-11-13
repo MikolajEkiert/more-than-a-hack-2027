@@ -3,7 +3,7 @@
 CONFIG ?= configs/baseline_smooth50.toml
 NOTE ?=
 
-.PHONY: help setup inspect review-watch-install review-watch-uninstall review-watch-status check lint fmt test run methods log eval submit guard-on guard-off protect-update
+.PHONY: help setup inspect validate review-watch-install review-watch-uninstall review-watch-status check lint fmt test run methods log eval submit guard-on guard-off protect-update
 
 help:  ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
@@ -39,6 +39,9 @@ log:  ## experiment log
 
 inspect:  ## make inspect TOPIC=ball|players|gaps|tagging (aggregates only)
 	uv run possession inspect $(or $(TOPIC),ball)
+
+validate:  ## make validate CONFIGS="configs/a.toml configs/b.toml" NOTE=... (another labelled match)
+	uv run possession validate $(CONFIGS) --bootstrap 200 $(if $(NOTE),--note "$(NOTE)",)
 
 eval:  ## official scoreboard over evaluation/results/ (public 5 min: sanity only)
 	uv run python evaluation/run_evaluation.py

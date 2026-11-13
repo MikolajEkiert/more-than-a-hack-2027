@@ -51,8 +51,18 @@ Derived quantities shared by several methods live in `features.py` and are memoi
 
 - `scoring.diagnostics`: possession count, mean duration, home share and label shares, all with no GT.
 - `scoring.public_sanity`: the public 5 minutes; a bug detector only.
-- Other games with labels derived from their own data are legitimate validation (RULES.md),
-  see tasks/02.
+- `validation` (`possession validate CONFIG...`): **the signal that decides between versions.**
+  It loads Metrica's public Sample Game 3 (same provider and EPTS format as the competition
+  tracking), derives per-frame H/A/D from it by an algorithm (D where the corrected tracking has
+  no ball; otherwise the team of the last on-ball event), degrades the tracking to resemble ours
+  (the ball lost for long stretches, tracks dropping out, the ball pulled off the possessor) and
+  scores a config with the official metric code, with a bootstrap interval.
+  - It passes the test the full match sets: it prefers the 50-frame window (0.318) to 125 (0.297)
+    and 25 (0.272), the order EVALUATION.md reports for the full match.
+  - Limits: one match; degradation is seeded and parameterised, not measured (we cannot know
+    which of our ball gaps are stoppages); corrected tracking pins the ball to the possessor, so
+    the team stage is easier there than on automatic tracking. Use it to rank versions, not to
+    forecast the score. Accept a change only beyond the noise band (spellF1 +/- 0.04).
 
 ## Reproducibility
 

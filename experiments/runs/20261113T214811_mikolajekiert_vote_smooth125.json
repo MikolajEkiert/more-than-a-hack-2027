@@ -1,0 +1,54 @@
+{
+  "author": "MikolajEkiert",
+  "config": {
+    "ball_state": {
+      "method": "ball_visible"
+    },
+    "decode": {
+      "method": "majority_vote",
+      "window": 125
+    },
+    "game": null,
+    "name": "vote_smooth125",
+    "team": {
+      "method": "nearest_player"
+    }
+  },
+  "config_path": "configs/vote_smooth125.toml",
+  "csv_sha256": "",
+  "diagnostics": {
+    "fps": 25,
+    "home_share": 0.4957,
+    "label_share_graded": {
+      "A": 0.3979,
+      "D": 0.2111,
+      "H": 0.3911,
+      "X": 0.0
+    },
+    "mean_possession_s": 11.08,
+    "n_frames": 143761,
+    "n_possessions": 408
+  },
+  "external": {
+    "alive_dead_f1": 0.8953,
+    "condition": "degraded(seed=0)",
+    "game": "metrica-sg3",
+    "macroF1": 0.7243,
+    "n_gt_possessions": 386,
+    "n_pred_possessions": 408,
+    "spellF1": 0.2972,
+    "spellF1_interval": [
+      0.2644,
+      0.33
+    ],
+    "team_acc_both_alive": 0.8172
+  },
+  "git_branch": "task/02-external-validation",
+  "git_commit": "5b625c6",
+  "git_dirty": true,
+  "name": "vote_smooth125",
+  "note": "task 02: test of the validation signal, baseline windows 25/50/125 on degraded Metrica SG3",
+  "public_sanity": null,
+  "seconds": 0.0,
+  "time_utc": "2026-11-13T21:48:11Z"
+}

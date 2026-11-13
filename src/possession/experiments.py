@@ -24,7 +24,16 @@ def git(*args: str) -> str:
         return ""
 
 
-def record(config, sha256: str, diagnostics: dict, sanity: dict | None, seconds: float, note=""):
+def record(
+    config,
+    sha256: str,
+    diagnostics: dict,
+    sanity: dict | None,
+    seconds: float,
+    note="",
+    external: dict | None = None,
+):
+    """Write one run JSON. `external` holds a score on another match (possession validate)."""
     now = datetime.now(UTC)
     author = git("config", "user.name") or getpass.getuser()
     entry = {
@@ -42,6 +51,8 @@ def record(config, sha256: str, diagnostics: dict, sanity: dict | None, seconds:
         "public_sanity": sanity,
         "note": note,
     }
+    if external is not None:
+        entry["external"] = external
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     safe_author = "".join(c if c.isalnum() else "-" for c in author.lower())
     path = RUNS_DIR / f"{now.strftime('%Y%m%dT%H%M%S')}_{safe_author}_{config.name}.json"
@@ -62,18 +73,21 @@ def load_all() -> list[dict]:
 def table(entries: list[dict]) -> str:
     header = (
         f"{'time (UTC)':<20} {'author':<12} {'name':<28} {'poss':>5} {'dur s':>6} "
-        f"{'pub spF1*':>9} {'commit':<8} note"
+        f"{'pub spF1*':>9} {'ext spF1':>8} {'commit':<8} note"
     )
     lines = [header, "-" * len(header)]
     for e in entries:
         d = e.get("diagnostics") or {}
         s = e.get("public_sanity") or {}
+        x = e.get("external") or {}
         commit = (e.get("git_commit") or "") + ("+" if e.get("git_dirty") else "")
         lines.append(
             f"{e.get('time_utc', ''):<20} {e.get('author', '')[:12]:<12} "
             f"{e.get('name', '')[:28]:<28} {d.get('n_possessions', ''):>5} "
-            f"{d.get('mean_possession_s', ''):>6} {s.get('spellF1', ''):>9} {commit:<8} "
+            f"{d.get('mean_possession_s', ''):>6} {s.get('spellF1', ''):>9} "
+            f"{x.get('spellF1', ''):>8} {commit:<8} "
             f"{e.get('note', '')}"
         )
     lines.append("* public 5-minute window: sanity check only, not a ranking (EVALUATION.md)")
+    lines.append("  ext spF1: another, labelled match (possession validate); this is what decides")
     return "\n".join(lines)
