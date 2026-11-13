@@ -293,7 +293,34 @@ belongs in `docs/DECISIONS.md` once the team agrees to it.
 
 ---
 
-## 8. Sources
+## 8. Relation to the team's other research (PR #2, `research/RESEARCH.md`)
+
+PR #2 is a general survey written independently, without reading other teams' work, and it leans
+towards supervised models trained on external matches. The two documents agree on most of the
+picture and differ on three points that change the design.
+
+Agreement: the three-way split of the problem; boundary timing as the main cost; HSMM / segmental
+decoding instead of a majority window; touch-based ownership with a change of the ball's velocity
+as the touch signal; explicit `D` before the second-half restart; pseudo-labels as an option;
+Metrica sample data as the place to learn the provider convention. PR #2 also adds a synthetic
+sensitivity simulation of the metric, which this document does not have (its absolute values are
+generator-dependent, as its review notes).
+
+Differences:
+
+| Topic | PR #2 | This document |
+|---|---|---|
+| DFL / IDSSE labels | "the same semantics as the GT" | A different convention: 41-52% dead and 7.8-9 turnovers per live minute, against ~4.2 in the public window [P]. Usable only after harmonisation, and second to Metrica sample data. |
+| How dead ball is encoded | a provider flag | In Metrica's corrected tracking it is the ball having no position [C], which makes gap classification the core of dead-ball detection. |
+| Where parameters come from | supervised training on degraded external matches | Noise parameters fitted on the match without labels; only structural hyperparameters from external matches. Avoids the transfer failure the forks report. |
+
+PR #2 also proposes whistle detection from audio and video ball detection. Both are outside this
+document's scope; note the reported organiser clarification of 3 November (section 6) before
+fitting anything on the provided video.
+
+---
+
+## 9. Sources
 
 Rule-based possession and events
 - Vidal-Codina et al. 2022, automatic event detection from tracking: https://ar5iv.labs.arxiv.org/html/2202.00804
