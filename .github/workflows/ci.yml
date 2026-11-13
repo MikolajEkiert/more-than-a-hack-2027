@@ -1,0 +1,25 @@
+# Runs on every PR and on main. Needs no match data: tests are synthetic, and the scorer runs on
+# the committed baselines. Never add the match data to CI -- it is not redistributable.
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - name: lint
+        run: |
+          uv run ruff check src tests scripts
+          uv run ruff format --check src tests scripts
+      - name: tests
+        run: uv run pytest
+      - name: repo guard
+        run: python3 scripts/check_repo.py
+      - name: official scorer still runs on the committed baselines
+        run: uv run python evaluation/run_evaluation.py
