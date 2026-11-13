@@ -22,6 +22,7 @@ PERCENTILES = (1, 5, 25, 50, 75, 95, 99)
 GAP_BUCKETS_S = (("<0.2s", 0.0, 0.2), ("0.2-1s", 0.2, 1.0), ("1-3s", 1.0, 3.0),
                  ("3-10s", 3.0, 10.0), (">10s", 10.0, np.inf))  # fmt: skip
 NEAR_M = (1.0, 2.0, 5.0)
+LONG_GAP_S = 3.0
 SHORT_POSSESSION_S = (2.0, 5.0)
 
 
@@ -65,6 +66,59 @@ def _gap_stats(seen: np.ndarray, half: np.ndarray, fps: int) -> dict:
             max=float(seconds.max()),
         )
     return out
+
+
+def _quartiles(values: np.ndarray) -> dict:
+    """n and three quartiles, with the same keys whether or not there is anything to summarise."""
+    values = np.asarray(values, dtype=np.float64)
+    values = values[np.isfinite(values)]
+    if not len(values):
+        return {"n": 0, "p25": None, "p50": None, "p75": None}
+    q = np.percentile(values, [25, 50, 75])
+    return {"n": int(len(values)), "p25": float(q[0]), "p50": float(q[1]), "p75": float(q[2])}
+
+
+def _where(edge: np.ndarray) -> dict:
+    known = edge[~np.isnan(edge)]
+    if not len(known):
+        return {"n": 0, "outside_share": None, "within_1m_share": None, "beyond_5m_share": None}
+    return {
+        "n": int(len(known)),
+        "outside_share": float((known < 0).mean()),
+        "within_1m_share": float(((known >= 0) & (known < 1)).mean()),
+        "beyond_5m_share": float((known >= 5).mean()),
+    }
+
+
+def gaps(match: Match) -> dict:
+    """The long ball gaps and what surrounds them: stoppages, or play with the ball lost?"""
+    graded, seen = match.graded, match.ball_seen
+    tracked = seen & graded
+    found = features.ball_gaps(match)
+    long = found["duration_s"] >= LONG_GAP_S
+    speed = features.collective_speed(match)
+    kin = features.ball_kinematics(match)
+    return {
+        "long_gaps": {
+            "n": int(long.sum()),
+            "frames_share_of_graded": float(
+                (found["stop"][long] - found["start"][long]).sum() / max(int(graded.sum()), 1)
+            ),
+            "duration_s": _quartiles(found["duration_s"][long]),
+            "players_speed_p90_inside_m_s": _quartiles(found["players_speed"][long]),
+            "ball_last_seen": _where(found["edge_before_m"][long]),
+            "ball_first_seen_after": _where(found["edge_after_m"][long]),
+        },
+        "players_speed_p90_m_s": {
+            "ball_tracked": _quartiles(speed[tracked]),
+            "ball_missing": _quartiles(speed[graded & ~seen]),
+        },
+        # The ATD has its own ball speed column; compare it with speed derived from positions.
+        "ball_speed_m_s": {
+            "atd_column": _quartiles(match.ball[tracked, 2]),
+            "from_positions": _quartiles(kin["speed"][tracked]),
+        },
+    }
 
 
 def ball(match: Match) -> dict:

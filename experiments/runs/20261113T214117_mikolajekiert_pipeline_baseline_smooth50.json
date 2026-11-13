@@ -1,0 +1,46 @@
+{
+  "author": "MikolajEkiert",
+  "config": {
+    "ball_state": {
+      "method": "ball_visible"
+    },
+    "decode": {
+      "method": "majority_vote",
+      "window": 50
+    },
+    "game": null,
+    "name": "pipeline_baseline_smooth50",
+    "team": {
+      "method": "nearest_player"
+    }
+  },
+  "config_path": "configs/baseline_smooth50.toml",
+  "csv_sha256": "678aa2d4bae99a79b478e6275257b3cbac464d55bcdc778eabf9dea1f05c84da",
+  "diagnostics": {
+    "fps": 25,
+    "home_share": 0.5703,
+    "label_share_graded": {
+      "A": 0.2907,
+      "D": 0.3234,
+      "H": 0.3859,
+      "X": 0.0
+    },
+    "mean_possession_s": 7.24,
+    "n_frames": 199319,
+    "n_possessions": 594
+  },
+  "git_branch": "task/01-data-and-features",
+  "git_commit": "f150e56",
+  "git_dirty": false,
+  "name": "pipeline_baseline_smooth50",
+  "note": "baseline through our pipeline on the local dataset",
+  "public_sanity": {
+    "macroF1": 0.6207,
+    "n_gt_possessions": 17,
+    "n_pred_possessions": 26,
+    "note": "public 5 min, 17 possessions: sanity only, never for choosing between versions",
+    "spellF1": 0.3256
+  },
+  "seconds": 2.7,
+  "time_utc": "2026-11-13T21:41:17Z"
+}

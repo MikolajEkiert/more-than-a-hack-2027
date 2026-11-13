@@ -84,7 +84,7 @@ Methods are pure: they read `Match` and never mutate it.
 make setup                   # once: uv sync (Python 3.11, pinned) + git hooks
 make check                   # DEFINITION OF DONE: ruff + pytest + repo guard
 uv run possession methods    # what is implemented
-uv run possession inspect ball|players|tagging        # understand the data: aggregates only
+uv run possession inspect ball|players|gaps|tagging        # understand the data: aggregates only
 uv run possession inspect labels --csv <file.csv>     # what a submission claims (no data needed)
 make run CONFIG=configs/x.toml NOTE="what this tests"   # produce + validate + log a run
 make log                     # experiment table
