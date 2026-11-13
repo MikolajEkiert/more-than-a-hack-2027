@@ -35,3 +35,9 @@ occlusion = free; never across a hand-over). Needs soft inputs from 03 and 04.
   `unsup_control` 0.503 [0.466, 0.546] against 0.321 for `majority_vote` on the baseline stages.
   With perfect inputs it scores 0.994. Not done: explicit durations, boundary rules across
   ball gaps.
+- 2026-11-14 · MikolajEkiert/Claude · Tie rule (switch at the first evidence of the new state, the
+  same for both teams) and `snap_stoppage_edges`. `unsup_v2` against the control version on
+  three matches, both label readings: +0.053 (`label_free`) and +0.050 (`published_baselines`),
+  accepted by the rule under both. Costs chosen for the smallest loss across readings and
+  profiles: turnover 5, stop 12, restart 12 nats. On the match: 326 possessions, mean 10.8 s,
+  44.4% dead.
