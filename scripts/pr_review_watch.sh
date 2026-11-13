@@ -56,8 +56,11 @@ AUTOFIX="${PR_REVIEW_AUTOFIX:-1}"
 MERGE_METHOD="${PR_MERGE_METHOD:-merge}"  # merge | squash | rebase
 MAX_FAILURES=2
 MAX_FIX_ROUNDS=3
-# The fixer may never change these (organiser code, CI, data, the guards themselves).
-PROTECTED_RE='^(evaluation/|starter/|data/|submission/|\.github/|scripts/protected\.sha256$|scripts/agent_guard\.json$)'
+# Organiser code, CI, data and the manifest: a PR that changes these is never merged automatically.
+ORGANISER_RE='^(evaluation/|starter/|data/|submission/|\.github/|scripts/protected\.sha256$|scripts/agent_guard\.json$)'
+# The fixer may never change these: the above plus everything that makes up the `make check` gate
+# and this job's own instructions (a prompt-injected fixer must not be able to weaken the gate).
+PROTECTED_RE='^(evaluation/|starter/|data/|submission/|\.github/|scripts/|Makefile$|pyproject\.toml$|uv\.lock$|\.pre-commit-config\.yaml$|tests/conftest\.py$|AGENTS\.md$|CLAUDE\.md$|src/possession/AGENTS\.md$|\.claude/|\.cursor/)'
 
 mkdir -p "$STATE_DIR"
 touch "$REVIEWED" "$FAILED" "$VERDICTS" "$ACTED" "$FIXES"
@@ -185,7 +188,9 @@ Address the findings below with the smallest correct change. For each finding de
   * needs a human decision (a rule or licence question, a choice between approaches, anything that
     would change what the PR sets out to do): change nothing
 Stay inside what this PR already touches. Do not edit evaluation/, starter/, .github/, data/,
-scripts/protected.sha256 or scripts/agent_guard.json. Do not read anything outside the working
+scripts/, Makefile, pyproject.toml, uv.lock, .pre-commit-config.yaml, tests/conftest.py, AGENTS.md,
+CLAUDE.md or .claude/ (a fix that touches them is discarded; report such a finding under 'Needs a
+human'). Do not delete or weaken existing tests. Do not read anything outside the working
 directory. Run 'make check' and iterate until it passes ('make fmt' formats). Do not commit, push
 or post: the caller does that after re-running the check itself.
 
@@ -210,7 +215,7 @@ Your final message is posted on the PR. Markdown, under 250 words, three short l
   if ! summary="$(cd "$FIXTREE" && claude -p "$prompt" \
       --model "$FIX_MODEL" --effort "$FIX_EFFORT" \
       --settings '{"disableAllHooks": true}' \
-      --allowedTools "Read,Edit,Write,Glob,Grep,Bash(make check),Bash(make fmt),Bash(make lint),Bash(make test),Bash(uv run pytest *),Bash(uv run ruff *),Bash(git status),Bash(git diff *),Bash(git log *),Bash(git show *)" \
+      --allowedTools "Read(./**),Edit(./**),Write(./**),Glob,Grep,Bash(make check),Bash(make fmt),Bash(make lint),Bash(make test),Bash(uv run pytest *),Bash(uv run ruff *),Bash(git status),Bash(git diff *),Bash(git log *),Bash(git show *)" \
       --disallowedTools "NotebookEdit,WebFetch,WebSearch,Bash(*--no-index*),Bash(*--output*),Bash(*>*),Bash(*|*),Bash(*;*),Bash(*&*)" \
       --permission-prompts none \
       --no-session-persistence 2>"$ERR" </dev/null)"; then
@@ -296,7 +301,19 @@ $FOOTER"
 
 # Merge gate for a PR whose review is clean: main + PR must pass `make check` locally.
 try_merge() {
-  local number="$1" sha="$2" branch="$3"
+  local number="$1" sha="$2" branch="$3" organiser
+  # Organiser files and the manifest are checked by code the PR itself can change, so decide here.
+  organiser="$(git -C "$REPO_DIR" diff --name-only "origin/main...$sha" | grep -E "$ORGANISER_RE" || true)"
+  if [ -n "$organiser" ]; then
+    log "#$number: changes organiser or guard files, leaving the merge to a human"
+    comment "$number" "### Claude auto-merge skipped at ${sha:0:7}
+
+The review is clean, but this PR changes files a human must approve: $(printf '%s' "$organiser" | tr '\n' ' ')
+
+$FOOTER"
+    [ -n "${DRY_RUN:-}" ] || echo "$number $sha" >> "$ACTED"
+    return 0
+  fi
   fixtree_at origin/main
   if ! git -C "$FIXTREE" merge -q --no-ff --no-edit "$sha" >/dev/null 2>&1; then
     log "#$number: conflicts with main, handing to the fixer"

@@ -8,12 +8,16 @@
 
     python scripts/check_repo.py                    # check (exit 1 on any problem)
     python scripts/check_repo.py --update-manifest  # after deliberately pulling an upstream update
+
+The manifest must also match origin/main's copy (when git can show it), so a PR cannot change a
+protected file and its hash together. After a deliberate update: ALLOW_MANIFEST_CHANGE=1.
 """
 
 import argparse
 import fnmatch
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -73,6 +77,30 @@ def check_protected() -> list[str]:
     return problems
 
 
+def manifest_on(ref: str) -> str | None:
+    """Return the manifest as committed on `ref`, or None if git cannot show it there."""
+    out = subprocess.run(
+        ["git", "show", f"{ref}:{MANIFEST.relative_to(ROOT).as_posix()}"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    return out.stdout if out.returncode == 0 else None
+
+
+def check_manifest_unchanged(ref: str = "origin/main") -> list[str]:
+    """Fail if the manifest differs from `ref`'s copy, unless ALLOW_MANIFEST_CHANGE=1."""
+    if os.environ.get("ALLOW_MANIFEST_CHANGE") == "1" or not MANIFEST.is_file():
+        return []
+    upstream = manifest_on(ref)
+    if upstream is None or upstream.splitlines() == MANIFEST.read_text().splitlines():
+        return []
+    return [
+        f"{MANIFEST.relative_to(ROOT)} differs from {ref} (organiser update? a human re-runs with "
+        "ALLOW_MANIFEST_CHANGE=1)"
+    ]
+
+
 def check_hygiene(files: list[str]) -> list[str]:
     problems = []
     for path in files:
@@ -107,7 +135,7 @@ def main() -> int:
         print(f"wrote {len(lines)} hashes to {MANIFEST.relative_to(ROOT)}")
         return 0
 
-    problems = check_protected() + check_hygiene(tracked())
+    problems = check_protected() + check_manifest_unchanged() + check_hygiene(tracked())
     for problem in problems:
         print(f"FAIL  {problem}")
     if not problems:
