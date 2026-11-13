@@ -46,3 +46,13 @@ from which possession labels are derived by an algorithm.
   Makefile (`make validate`), `AGENTS.md` and two configs (`vote_smooth25/125`). The interface
   line asked for the evidence in `possession run`; it is a separate `possession validate` command
   instead, so the competition run never needs the external download.
+- 2026-11-13 · MikolajEkiert/Claude · Validation v2 (owner's approved plan). Three matches (Sample
+  Games 1-3), two label readings (`touch`, `controlled`), two degradation profiles as files
+  (`configs/degradation/label_free.json`, `published_baselines.json`), `possession calibrate`,
+  `possession validate --against` with the acceptance rule. Numbers (mean spellF1 over 3 matches
+  x 3 seeds x 2 readings): `label_free`: window 25 / 50 / 125 = 0.261 / 0.334 / 0.322, control
+  0.522. `published_baselines`: 0.176 / 0.238 / 0.253, control 0.383. Window 50 beats 125 on the
+  mean under `label_free` (as on the full match) but not under `published_baselines`; the two
+  differ by 0.01-0.02 either way, inside the noise. Not measured: any profile's realism beyond
+  the aggregates and published scores it was set from.
+

@@ -1,0 +1,297 @@
+{
+  "author": "MikolajEkiert",
+  "config": {
+    "ball_state": {
+      "method": "stoppage_evidence"
+    },
+    "decode": {
+      "method": "switch_cost"
+    },
+    "game": null,
+    "name": "unsup_control",
+    "team": {
+      "method": "control_evidence"
+    }
+  },
+  "config_path": "configs/unsup_control.toml",
+  "csv_sha256": "",
+  "diagnostics": {
+    "fps": 25,
+    "home_share": 0.5644,
+    "label_share_graded": {
+      "A": 0.2972,
+      "D": 0.3177,
+      "H": 0.3851,
+      "X": 0.0
+    },
+    "mean_possession_s": 13.52,
+    "n_frames": 143761,
+    "n_possessions": 289
+  },
+  "external": {
+    "against": {
+      "accepted": true,
+      "gain": 0.1878,
+      "gain_by_convention": {
+        "controlled": 0.2267,
+        "touch": 0.149
+      },
+      "gain_by_game": {
+        "metrica-sg1": 0.1668,
+        "metrica-sg2": 0.1754,
+        "metrica-sg3": 0.2212
+      },
+      "games_won": 3,
+      "n_games": 3,
+      "name": "pipeline_baseline_smooth50"
+    },
+    "cells": [
+      {
+        "alive_dead_f1": 0.8847,
+        "convention": "touch",
+        "game": "metrica-sg1",
+        "macroF1": 0.7848,
+        "n_gt_possessions": 353,
+        "n_pred_possessions": 263,
+        "seed": 0,
+        "spellF1": 0.4727,
+        "team_acc_both_alive": 0.8598
+      },
+      {
+        "alive_dead_f1": 0.8847,
+        "convention": "controlled",
+        "game": "metrica-sg1",
+        "macroF1": 0.7948,
+        "n_gt_possessions": 238,
+        "n_pred_possessions": 263,
+        "seed": 0,
+        "spellF1": 0.5341,
+        "team_acc_both_alive": 0.8747
+      },
+      {
+        "alive_dead_f1": 0.8894,
+        "convention": "touch",
+        "game": "metrica-sg1",
+        "macroF1": 0.7916,
+        "n_gt_possessions": 353,
+        "n_pred_possessions": 261,
+        "seed": 1,
+        "spellF1": 0.514,
+        "team_acc_both_alive": 0.8635
+      },
+      {
+        "alive_dead_f1": 0.8894,
+        "convention": "controlled",
+        "game": "metrica-sg1",
+        "macroF1": 0.8012,
+        "n_gt_possessions": 238,
+        "n_pred_possessions": 261,
+        "seed": 1,
+        "spellF1": 0.5747,
+        "team_acc_both_alive": 0.877
+      },
+      {
+        "alive_dead_f1": 0.8922,
+        "convention": "touch",
+        "game": "metrica-sg1",
+        "macroF1": 0.7917,
+        "n_gt_possessions": 353,
+        "n_pred_possessions": 266,
+        "seed": 2,
+        "spellF1": 0.4853,
+        "team_acc_both_alive": 0.8585
+      },
+      {
+        "alive_dead_f1": 0.8922,
+        "convention": "controlled",
+        "game": "metrica-sg1",
+        "macroF1": 0.8025,
+        "n_gt_possessions": 238,
+        "n_pred_possessions": 266,
+        "seed": 2,
+        "spellF1": 0.5389,
+        "team_acc_both_alive": 0.8746
+      },
+      {
+        "alive_dead_f1": 0.917,
+        "convention": "touch",
+        "game": "metrica-sg2",
+        "macroF1": 0.8193,
+        "n_gt_possessions": 321,
+        "n_pred_possessions": 247,
+        "seed": 0,
+        "spellF1": 0.4894,
+        "team_acc_both_alive": 0.861
+      },
+      {
+        "alive_dead_f1": 0.917,
+        "convention": "controlled",
+        "game": "metrica-sg2",
+        "macroF1": 0.8281,
+        "n_gt_possessions": 229,
+        "n_pred_possessions": 247,
+        "seed": 0,
+        "spellF1": 0.5437,
+        "team_acc_both_alive": 0.8755
+      },
+      {
+        "alive_dead_f1": 0.9238,
+        "convention": "touch",
+        "game": "metrica-sg2",
+        "macroF1": 0.8296,
+        "n_gt_possessions": 321,
+        "n_pred_possessions": 251,
+        "seed": 1,
+        "spellF1": 0.4958,
+        "team_acc_both_alive": 0.8659
+      },
+      {
+        "alive_dead_f1": 0.9238,
+        "convention": "controlled",
+        "game": "metrica-sg2",
+        "macroF1": 0.8403,
+        "n_gt_possessions": 229,
+        "n_pred_possessions": 251,
+        "seed": 1,
+        "spellF1": 0.5592,
+        "team_acc_both_alive": 0.8832
+      },
+      {
+        "alive_dead_f1": 0.9178,
+        "convention": "touch",
+        "game": "metrica-sg2",
+        "macroF1": 0.8271,
+        "n_gt_possessions": 321,
+        "n_pred_possessions": 233,
+        "seed": 2,
+        "spellF1": 0.4866,
+        "team_acc_both_alive": 0.8718
+      },
+      {
+        "alive_dead_f1": 0.9178,
+        "convention": "controlled",
+        "game": "metrica-sg2",
+        "macroF1": 0.8378,
+        "n_gt_possessions": 229,
+        "n_pred_possessions": 233,
+        "seed": 2,
+        "spellF1": 0.555,
+        "team_acc_both_alive": 0.8893
+      },
+      {
+        "alive_dead_f1": 0.9563,
+        "convention": "touch",
+        "game": "metrica-sg3",
+        "macroF1": 0.8552,
+        "n_gt_possessions": 385,
+        "n_pred_possessions": 288,
+        "seed": 0,
+        "spellF1": 0.4969,
+        "team_acc_both_alive": 0.869
+      },
+      {
+        "alive_dead_f1": 0.9563,
+        "convention": "controlled",
+        "game": "metrica-sg3",
+        "macroF1": 0.8607,
+        "n_gt_possessions": 265,
+        "n_pred_possessions": 288,
+        "seed": 0,
+        "spellF1": 0.575,
+        "team_acc_both_alive": 0.8774
+      },
+      {
+        "alive_dead_f1": 0.9566,
+        "convention": "touch",
+        "game": "metrica-sg3",
+        "macroF1": 0.8492,
+        "n_gt_possessions": 385,
+        "n_pred_possessions": 287,
+        "seed": 1,
+        "spellF1": 0.4798,
+        "team_acc_both_alive": 0.8586
+      },
+      {
+        "alive_dead_f1": 0.9566,
+        "convention": "controlled",
+        "game": "metrica-sg3",
+        "macroF1": 0.8558,
+        "n_gt_possessions": 265,
+        "n_pred_possessions": 287,
+        "seed": 1,
+        "spellF1": 0.5587,
+        "team_acc_both_alive": 0.8689
+      },
+      {
+        "alive_dead_f1": 0.9544,
+        "convention": "touch",
+        "game": "metrica-sg3",
+        "macroF1": 0.8473,
+        "n_gt_possessions": 385,
+        "n_pred_possessions": 289,
+        "seed": 2,
+        "spellF1": 0.4813,
+        "team_acc_both_alive": 0.8596
+      },
+      {
+        "alive_dead_f1": 0.9544,
+        "convention": "controlled",
+        "game": "metrica-sg3",
+        "macroF1": 0.8516,
+        "n_gt_possessions": 265,
+        "n_pred_possessions": 289,
+        "seed": 2,
+        "spellF1": 0.5509,
+        "team_acc_both_alive": 0.8661
+      }
+    ],
+    "condition": "degraded(profile=label_free, seeds=[0, 1, 2])",
+    "games": [
+      "metrica-sg1",
+      "metrica-sg2",
+      "metrica-sg3"
+    ],
+    "macroF1": 0.826,
+    "profile": "label_free",
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "spellF1": 0.5218,
+    "summary": {
+      "by_convention": {
+        "controlled": 0.5545,
+        "touch": 0.4891
+      },
+      "by_game": {
+        "metrica-sg1": 0.52,
+        "metrica-sg2": 0.5216,
+        "metrica-sg3": 0.5238
+      },
+      "by_game_convention": {
+        "metrica-sg1": {
+          "controlled": 0.5492,
+          "touch": 0.4907
+        },
+        "metrica-sg2": {
+          "controlled": 0.5526,
+          "touch": 0.4906
+        },
+        "metrica-sg3": {
+          "controlled": 0.5615,
+          "touch": 0.486
+        }
+      },
+      "mean": 0.5218
+    }
+  },
+  "git_branch": "task/02-validation-v2",
+  "git_commit": "19a38a2",
+  "git_dirty": true,
+  "name": "unsup_control",
+  "note": "validation v2: three matches, both label conventions, profile label_free",
+  "public_sanity": null,
+  "seconds": 22.9,
+  "time_utc": "2026-11-13T22:45:01Z"
+}

@@ -6,8 +6,9 @@
     possession inspect {ball,players,gaps,tagging,labels} [--game G] [--csv F] [--json]
                                            aggregate statistics of the data or of a submission
                                            (rates, percentiles, histograms; never rows)
-    possession validate CONFIG... [--game metrica-sg3] [--seed N] [--clean] [--bootstrap N]
-                                           score configs on another, labelled match
+    possession validate CONFIG... [--profile P] [--against CONFIG] [--games a,b] [--seeds 0,1,2]
+                                           score configs on other, labelled matches
+    possession calibrate [--write]         fit a degradation profile to the published baselines
     possession submit configs/x.toml --team NAME
                                            final file: run twice, require identical bytes,
                                            validate with the official script, write submission/
@@ -102,36 +103,116 @@ def cmd_run(args) -> int:
     return 0
 
 
-def cmd_validate(args) -> int:
-    """Score configs on another, labelled match (never the competition match)."""
-    from possession import config as config_mod
-    from possession import experiments, pipeline, scoring, validation
+def _csv(text: str) -> list[str]:
+    return [part.strip() for part in text.split(",") if part.strip()]
 
-    clean, truth = validation.load_external(args.game)
-    match = clean if args.clean else validation.degrade(clean, truth, seed=args.seed)
-    condition = "clean" if args.clean else f"degraded(seed={args.seed})"
-    print(f"{args.game} {condition}: {int(match.graded.sum())} graded frames")
-    for path in args.configs:
-        cfg = config_mod.load(path)
-        started = time.time()
+
+def _evaluate(config_path: str, games, seeds, profile):
+    """(config, cells, seconds, last run's diagnostics) of one config on the external matches."""
+    from possession import config as config_mod
+    from possession import pipeline, scoring, validation
+
+    cfg = config_mod.load(config_path)
+    last = {}
+
+    def run(match):
         labels = pipeline.run(cfg, match).labels
-        seconds = time.time() - started
-        result = validation.score(labels, truth, bootstrap=args.bootstrap)
-        interval = result.get("spellF1_interval")
+        last["diagnostics"] = scoring.diagnostics(labels, match.half, match.fps)
+        return labels
+
+    started = time.time()
+    cells = validation.evaluate(run, games=games, seeds=seeds, profile=profile)
+    return cfg, cells, time.time() - started, last.get("diagnostics", {})
+
+
+def cmd_validate(args) -> int:
+    """Score configs on other, labelled matches (never the competition match)."""
+    from possession import experiments, validation
+
+    games = _csv(args.games) if args.games else list(validation.GAMES)
+    seeds = [int(seed) for seed in _csv(args.seeds)]
+    profile = None if args.clean else args.profile
+    condition = "clean" if args.clean else f"degraded(profile={profile}, seeds={seeds})"
+    print(f"external matches {games}, {condition}; spellF1 under each label convention")
+    header = f"{'config':<28} {'mean':>6} " + " ".join(f"{c:>10}" for c in validation.CONVENTIONS)
+    print(header + "   " + "  ".join(f"{g[-3:]}" for g in games) + "   poss pred/gt (last)")
+
+    results = {}
+    reference = _evaluate(args.against, games, seeds, profile) if args.against else None
+    for path in args.configs:
+        cfg, cells, seconds, diag = _evaluate(path, games, seeds, profile)
+        results[cfg.name] = cells
+        summary = validation.summarise(cells)
+        last = cells[-1]
         print(
-            f"OK    {cfg.name:28s} spellF1 {result['spellF1']:.4f}"
-            + (f" [{interval[0]:.3f}, {interval[1]:.3f}]" if interval else "")
-            + f"  macroF1 {result['macroF1']:.4f}"
-            f"  possessions {result['n_pred_possessions']} vs {result['n_gt_possessions']}"
-            f"  alive/dead F1 {result['alive_dead_f1']:.3f}"
-            f"  team acc {result['team_acc_both_alive']:.3f}   {seconds:.1f} s"
+            f"{cfg.name:<28} {summary['mean']:>6.4f} "
+            + " ".join(f"{summary['by_convention'][c]:>10.4f}" for c in validation.CONVENTIONS)
+            + "   "
+            + "  ".join(f"{summary['by_game'][g]:.3f}"[1:] for g in games)
+            + f"   {last['n_pred_possessions']}/{last['n_gt_possessions']}   {seconds:.0f} s"
         )
+        external = {
+            "games": games,
+            "seeds": seeds,
+            "profile": profile,
+            "condition": condition,
+            "spellF1": summary["mean"],
+            "summary": summary,
+            "macroF1": validation.summarise(cells, "macroF1")["mean"],
+            "cells": cells,
+        }
+        if reference:
+            verdict = validation.compare(cells, reference[1])
+            external["against"] = {"name": reference[0].name, **verdict}
+            print(
+                f"    vs {reference[0].name}: gain {verdict['gain']:+.4f}, by convention "
+                f"{verdict['gain_by_convention']}, wins {verdict['games_won']}/{verdict['n_games']}"
+                f" matches -> {'ACCEPT' if verdict['accepted'] else 'reject'}"
+            )
         if not args.no_log:
-            external = {"game": args.game, "condition": condition, **result}
-            diag = scoring.diagnostics(labels, match.half, match.fps)
             experiments.record(
                 cfg, "", diag, None, seconds, note=args.note or "", external=external
             )
+    return 0
+
+
+def cmd_calibrate(args) -> int:
+    """Fit a degradation profile to the organisers' published full-match baseline scores."""
+    from possession import validation
+
+    games = _csv(args.games) if args.games else list(validation.GAMES)
+    seeds = [int(seed) for seed in _csv(args.seeds)]
+    base = validation.baseline_residual(games, seeds, profile="label_free")
+    print(f"published (spellF1, macroF1) by window: {validation.PUBLISHED_FULL_MATCH}")
+    print(f"label_free profile: rmse {base['rmse']}  touch {base['touch']['rmse']}"
+          f"  controlled {base['controlled']['rmse']}")  # fmt: skip
+
+    def progress(row):
+        print(f"  rmse {row['rmse']:.4f}  {row['overrides']}", flush=True)
+
+    rows = validation.calibrate(games, seeds, progress=progress)
+    best = rows[0]
+    print(f"best: rmse {best['rmse']}  touch {best['touch']['rmse']}"
+          f"  controlled {best['controlled']['rmse']}  {best['overrides']}")  # fmt: skip
+    if args.write:
+        params = {**validation.degradation_profile("label_free"), **best["overrides"]}
+        evidence = {
+            "games": games,
+            "seeds": seeds,
+            "published_full_match": {str(k): v for k, v in validation.PUBLISHED_FULL_MATCH.items()},
+            "label_free_profile": base,
+            "fitted": {k: v for k, v in best.items() if k != "overrides"},
+            "grid": {k: list(v) for k, v in validation.CALIBRATION_GRID.items()},
+            "runners_up": [{"rmse": r["rmse"], "overrides": r["overrides"]} for r in rows[1:4]],
+        }
+        source = (
+            "Fitted by `possession calibrate` so that the four organiser baselines score on the"
+            " degraded external matches what EVALUATION.md publishes for them on the full match"
+            " (mean over both label conventions of the RMSE to the eight published numbers)."
+            " Uses published documentation, never the ground truth files."
+        )
+        path = validation.write_profile("published_baselines", params, source, evidence)
+        print(f"wrote {_rel(path)}")
     return 0
 
 
@@ -193,15 +274,22 @@ def main(argv=None) -> int:
     p.add_argument("--rebuild-cache", action="store_true")
     p.set_defaults(fn=cmd_run)
 
-    p = sub.add_parser("validate", help="score configs on another, labelled match")
+    p = sub.add_parser("validate", help="score configs on other, labelled matches")
     p.add_argument("configs", nargs="+")
-    p.add_argument("--game", default="metrica-sg3")
-    p.add_argument("--seed", type=int, default=0, help="seed of the degradation")
+    p.add_argument("--games", default="", help="comma-separated; default: all external matches")
+    p.add_argument("--seeds", default="0,1,2", help="seeds of the degradation")
+    p.add_argument("--profile", default="label_free", help="a name in configs/degradation/")
     p.add_argument("--clean", action="store_true", help="do not degrade the tracking")
-    p.add_argument("--bootstrap", type=int, default=0, help="draws for a spellF1 interval")
+    p.add_argument("--against", help="config to compare with under the acceptance rule")
     p.add_argument("--note", default="")
     p.add_argument("--no-log", action="store_true")
     p.set_defaults(fn=cmd_validate)
+
+    p = sub.add_parser("calibrate", help="fit a degradation profile to the published baselines")
+    p.add_argument("--games", default="")
+    p.add_argument("--seeds", default="0,1")
+    p.add_argument("--write", action="store_true", help="write configs/degradation/")
+    p.set_defaults(fn=cmd_calibrate)
 
     p = sub.add_parser("log", help="show the experiment log")
     p.add_argument("-n", type=int, default=30)

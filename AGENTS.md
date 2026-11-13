@@ -87,7 +87,7 @@ uv run possession methods    # what is implemented
 uv run possession inspect ball|players|gaps|tagging        # understand the data: aggregates only
 uv run possession inspect labels --csv <file.csv>     # what a submission claims (no data needed)
 make run CONFIG=configs/x.toml NOTE="what this tests"   # produce + validate + log a run
-make validate CONFIGS="configs/a.toml configs/b.toml"  # score on another labelled match: this decides
+make validate CONFIGS="configs/a.toml" AGAINST=configs/b.toml  # other labelled matches: ranks versions
 make log                     # experiment table
 make eval                    # official scoreboard (public window: sanity only)
 make submit CONFIG=... TEAM=<team>   # final file in submission/, reproducibility-checked

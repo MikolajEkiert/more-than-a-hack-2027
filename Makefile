@@ -40,8 +40,8 @@ log:  ## experiment log
 inspect:  ## make inspect TOPIC=ball|players|gaps|tagging (aggregates only)
 	uv run possession inspect $(or $(TOPIC),ball)
 
-validate:  ## make validate CONFIGS="configs/a.toml configs/b.toml" NOTE=... (another labelled match)
-	uv run possession validate $(CONFIGS) --bootstrap 200 $(if $(NOTE),--note "$(NOTE)",)
+validate:  ## make validate CONFIGS="configs/a.toml ..." [AGAINST=configs/b.toml] [PROFILE=name] NOTE=...
+	uv run possession validate $(CONFIGS) $(if $(AGAINST),--against $(AGAINST),) $(if $(PROFILE),--profile $(PROFILE),) $(if $(NOTE),--note "$(NOTE)",)
 
 eval:  ## official scoreboard over evaluation/results/ (public 5 min: sanity only)
 	uv run python evaluation/run_evaluation.py
