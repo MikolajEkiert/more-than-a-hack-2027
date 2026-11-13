@@ -113,7 +113,7 @@ def test_labels_from_csv(tmp_path, monkeypatch):
 
 def test_output_size_independent_of_n_frames():
     small, large = (make_match(n=n) for n in (3000, 30000))
-    for topic in ("ball", "players"):
+    for topic in ("ball", "players", "gaps"):
         a = getattr(inspect_data, topic)(small)
         b = getattr(inspect_data, topic)(large)
         assert [k for k, _ in inspect_data.flatten(a)] == [k for k, _ in inspect_data.flatten(b)]
@@ -132,3 +132,14 @@ def test_cli_inspect_json(monkeypatch, capsys, match):
     assert "tracked_share" in json.loads(capsys.readouterr().out)
     assert cli.main(["inspect", "players", "--game", "SYNTH"]) == 0
     assert "tracked_per_frame.p50" in capsys.readouterr().out
+
+
+def test_gap_aggregates(match):
+    out = inspect_data.gaps(match)
+    assert out["long_gaps"]["n"] >= 0
+    for name, value in _rates(out):
+        assert 0 <= value <= 1, name
+    # make_match fills the speed column with 5.0 while the ball follows a random walk: the two
+    # sources are reported side by side so a disagreement like the real data's is visible
+    assert out["ball_speed_m_s"]["atd_column"]["p50"] == pytest.approx(5.0)
+    assert out["ball_speed_m_s"]["from_positions"]["n"] > 0

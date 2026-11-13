@@ -37,7 +37,7 @@ methods:  ## registered methods per stage (check before writing a new one)
 log:  ## experiment log
 	uv run possession log
 
-inspect:  ## make inspect TOPIC=ball|players|tagging (aggregates only)
+inspect:  ## make inspect TOPIC=ball|players|gaps|tagging (aggregates only)
 	uv run possession inspect $(or $(TOPIC),ball)
 
 eval:  ## official scoreboard over evaluation/results/ (public 5 min: sanity only)
