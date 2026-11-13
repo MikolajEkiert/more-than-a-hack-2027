@@ -118,3 +118,37 @@ def test_score_uses_the_official_metric():
     assert 0 < validation.score(late, labels)["spellF1"] < 1.0
     constant = np.full(len(labels), "H", dtype="<U1")
     assert validation.score(constant, labels)["n_pred_possessions"] == 1
+
+
+def test_record_keeps_the_external_score(tmp_path, monkeypatch):
+    from possession import config as config_mod
+    from possession import experiments
+
+    monkeypatch.setattr(experiments, "RUNS_DIR", tmp_path)
+    cfg = config_mod.load("configs/vote_smooth25.toml")
+    external = {"game": "metrica-sg3", "condition": "degraded(seed=0)", "spellF1": 0.1234}
+    experiments.record(cfg, "", {"n_possessions": 7}, None, 0.0, external=external)
+    (entry,) = experiments.load_all()
+    assert entry["external"] == external
+
+
+def test_table_shows_the_external_score_only_where_there_is_one():
+    from possession import experiments
+
+    external = {"spellF1": 0.1234}
+    lines = experiments.table([{"name": "a", "external": external}, {"name": "b"}]).splitlines()
+    assert "ext spF1" in lines[0]
+    assert "0.1234" in lines[2]
+    assert "0.1234" not in lines[3]
+
+
+def test_table_marks_clean_and_degraded_external_scores():
+    from possession import experiments
+
+    entries = [
+        {"name": "a", "external": {"spellF1": 0.1234, "condition": "clean"}},
+        {"name": "b", "external": {"spellF1": 0.4321, "condition": "degraded(seed=0)"}},
+    ]
+    lines = experiments.table(entries).splitlines()
+    assert "0.1234c" in lines[2]
+    assert "0.4321d" in lines[3]
