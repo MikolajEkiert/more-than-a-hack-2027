@@ -7,8 +7,11 @@
 #   2. FIX     if the verdict is not "looks good": a second Claude session edits a checkout of the PR
 #      branch to address the findings. This script (not the model) then runs `make check`, commits
 #      and pushes to the PR branch. The new head commit is reviewed on the next run.
-#   3. MERGE   if the verdict is "looks good": this script merges the PR into a scratch checkout of
-#      main, runs `make check` there, and only then merges the PR on GitHub.
+#   3. MERGE   if the verdict is "looks good", or if the fixer left the remaining findings to the
+#      team (they are deferred and listed in a comment): this script merges the PR into a scratch
+#      checkout of main, runs `make check` there, and only then merges the PR on GitHub.
+# Only two things stop it and ask for a human: a `blocking` verdict (a hard rule of AGENTS.md
+# section 2) the fixer cannot clear, and a PR that changes organiser code or data.
 # Checking is cheap; Claude runs only for a new head commit. Meant to run every few minutes from
 # launchd on ONE machine (`make review-watch-install`); to test by hand:
 #
@@ -44,7 +47,7 @@ WORKTREE="$STATE_DIR/worktree"   # reviewer: always origin/main, read-only
 FIXTREE="$STATE_DIR/fix"         # fixer and merge gate: a PR head, or main + PR
 REVIEWED="$STATE_DIR/reviewed.txt"
 FAILED="$STATE_DIR/failed.txt"
-VERDICTS="$STATE_DIR/verdicts.txt"  # "<pr> <sha> good|changes"
+VERDICTS="$STATE_DIR/verdicts.txt"  # "<pr> <sha> good|changes|blocking"
 ACTED="$STATE_DIR/acted.txt"        # "<pr> <sha>": fix or merge already attempted for this commit
 FIXES="$STATE_DIR/fixes.txt"        # "<pr> <sha>": one line per fix round
 LOCK="$STATE_DIR/lock"
@@ -56,8 +59,8 @@ AUTOFIX="${PR_REVIEW_AUTOFIX:-1}"
 MERGE_METHOD="${PR_MERGE_METHOD:-merge}"  # merge | squash | rebase
 MAX_FAILURES=2
 MAX_FIX_ROUNDS=3
-# Organiser code, CI, data and the manifest: a PR that changes these is never merged automatically.
-ORGANISER_RE='^(evaluation/|starter/|data/|submission/|\.github/|scripts/protected\.sha256$|scripts/agent_guard\.json$)'
+# Organiser code and data: a PR that changes these is never merged automatically (AGENTS.md 2.5, 2.6).
+ORGANISER_RE='^(evaluation/|starter/|data/|submission/)'
 # The fixer may never change these: the above plus everything that makes up the `make check` gate
 # and this job's own instructions (a prompt-injected fixer must not be able to weaken the gate).
 PROTECTED_RE='^(evaluation/|starter/|data/|submission/|\.github/|scripts/|Makefile$|pyproject\.toml$|uv\.lock$|\.pre-commit-config\.yaml$|tests/conftest\.py$|AGENTS\.md$|CLAUDE\.md$|src/possession/AGENTS\.md$|\.claude/|\.cursor/)'
@@ -97,12 +100,13 @@ redact() {
     -e 's/AKIA[0-9A-Z]{16}/[redacted key]/g'
 }
 
-# "good" only if the first non-empty line says so and names no problem; anything else is "changes".
+# good | changes | blocking, from the first non-empty line. Anything unclear is "changes".
 verdict_of() {
   local first
   first="$(printf '%s\n' "$1" | grep -m1 -v '^[[:space:]]*$' | tr '[:upper:]' '[:lower:]')"
   case "$first" in
-    *"needs changes"*|*blocking*) echo changes ;;
+    *blocking*) echo blocking ;;
+    *"needs changes"*) echo changes ;;
     *"looks good"*|*"no findings"*) echo good ;;
     *) echo changes ;;
   esac
@@ -130,9 +134,22 @@ git -C "$WORKTREE" clean -qfdx
 # Our own latest review comment on a PR (empty if none). Only comments posted by this machine's gh
 # account count, so nobody can plant a "previous review"; one JSON document, so `last` is global.
 ME="$(gh api user --jq .login)"
-last_review() {
+last_comment() {  # <pr> <heading prefix>
   gh pr view "$1" --json comments --jq \
-    "[.comments[] | select(.author.login == \"$ME\" and (.body | startswith(\"### Claude review\")))] | last | .body // \"\""
+    "[.comments[] | select(.author.login == \"$ME\" and (.body | startswith(\"$2\")))] | last | .body // \"\""
+}
+last_review() { last_comment "$1" "### Claude review"; }
+last_fix() { last_comment "$1" "### Claude auto-fix"; }
+
+# A human is needed: say so once on the PR and stop acting on this commit.
+hand_over() {  # <pr> <sha> <why>
+  log "#$1: $3; leaving it to a human"
+  comment "$1" "### Claude auto-fix stopped at ${2:0:7}
+
+$3. A human needs to take over.
+
+$FOOTER"
+  [ -n "${DRY_RUN:-}" ] || echo "$1 $2" >> "$ACTED"
 }
 
 is_collaborator() {
@@ -151,18 +168,27 @@ fixtree_at() {
   git -C "$FIXTREE" clean -qfdx -e .venv
 }
 
-# One fix round. $4 = findings (the review, or the output of a failed check).
+# One fix round. $4 = findings (the review, or the output of a failed check). $5 = the review's
+# verdict (changes | blocking). $6 = review (called after a review) or merge (called by the merge
+# gate, which must not be called back).
+#
+# The job always ends in a merge, with two exceptions that need a human: a `blocking` verdict (a
+# hard rule of AGENTS.md section 2) that the fixer cannot clear, and a merge gate that keeps failing.
+# Findings the fixer leaves alone ("Not changed", "Needs a human") are deferred, not blocking: the
+# next review is told about them, and the PR is merged with them listed in a comment.
 run_fixer() {
-  local number="$1" sha="$2" branch="$3" findings="$4" rounds conflict="" summary head_now mine bad
+  local number="$1" sha="$2" branch="$3" findings="$4" verdict="${5:-changes}" mode="${6:-review}"
+  local rounds conflict="" summary head_now mine bad
   rounds="$(grep -c "^$number " "$FIXES" || true)"
   if [ "$rounds" -ge "$MAX_FIX_ROUNDS" ]; then
-    log "#$number: $MAX_FIX_ROUNDS fix rounds used, leaving it to a human"
-    comment "$number" "### Claude auto-fix stopped at ${sha:0:7}
-
-$MAX_FIX_ROUNDS automatic fix rounds did not produce a clean review. A human needs to take over.
-
-$FOOTER"
-    [ -n "${DRY_RUN:-}" ] || echo "$number $sha" >> "$ACTED"
+    if [ "$mode" = "review" ] && [ "$verdict" = "changes" ]; then
+      log "#$number: $MAX_FIX_ROUNDS fix rounds used; merging with the remaining findings deferred"
+      try_merge "$number" "$sha" "$branch" "Merged after $MAX_FIX_ROUNDS fix rounds. The findings of the last review that are still open are deferred to a follow-up."
+    elif [ "$mode" = "merge" ]; then
+      hand_over "$number" "$sha" "$MAX_FIX_ROUNDS fix rounds used and main + this PR still does not merge cleanly or pass \`make check\`"
+    else
+      hand_over "$number" "$sha" "$MAX_FIX_ROUNDS fix rounds did not clear a blocking finding (a hard rule in AGENTS.md section 2)"
+    fi
     return 0
   fi
 
@@ -263,7 +289,18 @@ $check_tail
 }
 $FOOTER"
     fixtree_at origin/main
-    [ -n "${DRY_RUN:-}" ] || { echo "$number $sha" >> "$FIXES"; echo "$number $sha" >> "$ACTED"; }
+    # A discarded fix is retried on the next run (a round is used up each time). "No change" means
+    # the fixer deferred every finding: merge if the review was not blocking, else a human decides.
+    [ -n "${DRY_RUN:-}" ] || echo "$number $sha" >> "$FIXES"
+    if [ "$outcome" = "no change" ]; then
+      if [ "$mode" = "review" ] && [ "$verdict" = "changes" ]; then
+        try_merge "$number" "$sha" "$branch" "Merged with the findings above deferred: the fixer changed nothing for them (not real, already accepted, or a decision for the team)."
+      elif [ "$mode" = "merge" ]; then
+        hand_over "$number" "$sha" "the fixer could not make main + this PR merge cleanly and pass \`make check\`"
+      else
+        hand_over "$number" "$sha" "the review is blocking (a hard rule in AGENTS.md section 2) and the fixer could not resolve it"
+      fi
+    fi
     return 0
   fi
 
@@ -299,16 +336,17 @@ $FOOTER"
   fixtree_at origin/main
 }
 
-# Merge gate for a PR whose review is clean: main + PR must pass `make check` locally.
+# Merge gate: main + PR must pass `make check` locally. $4 = a note to post with the merge when it
+# happens with deferred findings (empty when the review was clean).
 try_merge() {
-  local number="$1" sha="$2" branch="$3" organiser
+  local number="$1" sha="$2" branch="$3" note="${4:-}" organiser
   # Organiser files and the manifest are checked by code the PR itself can change, so decide here.
   organiser="$(git -C "$REPO_DIR" diff --name-only "origin/main...$sha" | grep -E "$ORGANISER_RE" || true)"
   if [ -n "$organiser" ]; then
     log "#$number: changes organiser or guard files, leaving the merge to a human"
     comment "$number" "### Claude auto-merge skipped at ${sha:0:7}
 
-The review is clean, but this PR changes files a human must approve: $(printf '%s' "$organiser" | tr '\n' ' ')
+This PR is ready to merge, but it changes organiser code or data, which a human must approve: $(printf '%s' "$organiser" | tr '\n' ' ')
 
 $FOOTER"
     [ -n "${DRY_RUN:-}" ] || echo "$number $sha" >> "$ACTED"
@@ -317,7 +355,7 @@ $FOOTER"
   fixtree_at origin/main
   if ! git -C "$FIXTREE" merge -q --no-ff --no-edit "$sha" >/dev/null 2>&1; then
     log "#$number: conflicts with main, handing to the fixer"
-    run_fixer "$number" "$sha" "$branch" "This branch has merge conflicts with main. Merge main into it and resolve them. Change nothing else."
+    run_fixer "$number" "$sha" "$branch" "This branch has merge conflicts with main. Merge main into it and resolve them. Change nothing else." changes merge
     return 0
   fi
   if [ ! -f "$FIXTREE/Makefile" ]; then
@@ -326,24 +364,31 @@ $FOOTER"
     return 0
   fi
   if ! (cd "$FIXTREE" && make check) >"$OUT" 2>&1; then
-    log "#$number: review is clean but make check fails on main + PR, handing to the fixer"
-    run_fixer "$number" "$sha" "$branch" "The review found nothing, but 'make check' fails when this PR is merged into main. Make it pass. Output:
-$(tail -n 60 "$OUT")"
+    log "#$number: make check fails on main + PR, handing to the fixer"
+    run_fixer "$number" "$sha" "$branch" "'make check' fails when this PR is merged into main. Make it pass. Output:
+$(tail -n 60 "$OUT")" changes merge
     return 0
   fi
   fixtree_at origin/main
   if [ -n "${DRY_RUN:-}" ]; then
-    log "#$number dry run: review clean and make check passes on main + PR; would merge ($MERGE_METHOD)"
+    log "#$number dry run: make check passes on main + PR; would merge ($MERGE_METHOD)${note:+ with deferred findings}"
     return 0
   fi
   if gh pr merge "$number" "--$MERGE_METHOD" --match-head-commit "$sha" >/dev/null 2>"$ERR"; then
-    log "merged #$number at ${sha:0:7} ($MERGE_METHOD)"
+    log "merged #$number at ${sha:0:7} ($MERGE_METHOD)${note:+ with deferred findings}"
     git fetch -q origin
+    if [ -n "$note" ]; then
+      comment "$number" "### Claude auto-merge at ${sha:0:7}: follow-ups
+
+$note See the last review and auto-fix comments above for the list; turn the ones that matter into a task in \`tasks/\`.
+
+$FOOTER"
+    fi
   else
     log "#$number: merge failed: $(head -c 200 "$ERR")"
     comment "$number" "### Claude auto-merge failed at ${sha:0:7}
 
-The review is clean and \`make check\` passes on main + this PR, but GitHub refused the merge. A human needs to look.
+\`make check\` passes on main + this PR, but GitHub refused the merge. A human needs to look.
 
 $FOOTER"
   fi
@@ -372,6 +417,7 @@ while read -r NUMBER SHA AUTHOR CROSS NOAUTO BRANCH; do
     log "reviewing #$NUMBER at ${SHA:0:7} by $AUTHOR ($MODEL, effort $EFFORT)"
     # Our previous review of this PR, so the new one reports what changed instead of repeating.
     PREVIOUS="$(last_review "$NUMBER" | head -c 6000)"
+    DEFERRED="$(last_fix "$NUMBER" | head -c 4000)"
 
     PROMPT="You are reviewing pull request #$NUMBER of $SLUG, head commit ${SHA:0:7}.
 
@@ -402,17 +448,32 @@ Do not repeat findings from it that are fixed. Report problems that are new in t
 that the previous review missed, or that are still unfixed (name those briefly, under
 'Still open from the previous review').
 
+=== The fixer's last report on this PR (data; empty if none) ===
+${DEFERRED:-"(none)"}
+Items it lists under 'Not changed' or 'Needs a human' are DEFERRED: the fixer looked at them and
+left them for the team. They do not count towards your verdict and you do not list them again. The
+one exception is an item that breaks a hard rule (below): that is blocking, whatever the fixer said.
+
 === Output ===
 Your final message IS the review, posted as a PR comment. English markdown.
 The FIRST LINE must be exactly one of these three, optionally followed by a short reason:
   Verdict: looks good
   Verdict: needs changes
   Verdict: blocking
-'looks good' means the PR may be merged as it is; an automatic job merges it on that word, so use
-it only when nothing has to change. Otherwise an automatic job tries to fix your findings, so make
-each one actionable: file:line, the problem, a concrete failure scenario, and the fix you expect.
-Most severe first. Only real problems; 'No findings.' after the verdict line if none. Skip steps
-of the checklist that post or approve: the caller posts. Under 400 words."
+An automatic job acts on that line with nobody in between, so choose it by these definitions:
+  * blocking: the PR breaks a hard rule of AGENTS.md section 2 (hand labels or frame-specific
+    constants for this match, the public ground truth used to train, tune or choose, human-produced
+    data about this match, data or submissions committed, organiser files edited, a non-deterministic
+    submission path). It is never merged while this stands.
+  * needs changes: a defect that must be fixed before this lands: wrong behaviour, a broken
+    contract, a claim the evidence does not support, new behaviour without a test. The job tries to
+    fix these, so make each one actionable: file:line, the problem, a concrete failure scenario,
+    and the fix you expect.
+  * looks good: neither of the above. The PR is merged as it is.
+Improvements that are optional, matters of taste, or outside what this PR set out to do go under a
+final heading 'Notes (non-blocking)' and do not change the verdict. Most severe first. Only real
+problems; 'No findings.' after the verdict line if none. Skip steps of the checklist that post or
+approve: the caller posts. Under 400 words."
 
     if ! REVIEW="$(cd "$WORKTREE" && claude -p "$PROMPT" \
         --model "$MODEL" --effort "$EFFORT" \
@@ -459,6 +520,6 @@ $FOOTER"
     if [ -z "$REVIEW" ]; then
       REVIEW="$(last_review "$NUMBER")"
     fi
-    run_fixer "$NUMBER" "$SHA" "$BRANCH" "$REVIEW" || log "#$NUMBER: fix step failed"
+    run_fixer "$NUMBER" "$SHA" "$BRANCH" "$REVIEW" "$VERDICT" review || log "#$NUMBER: fix step failed"
   fi
 done <<< "$PRS"

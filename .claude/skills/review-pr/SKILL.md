@@ -22,4 +22,5 @@ description: Review a teammate's pull request for rule compliance, duplication, 
      in docs/DECISIONS.md.
    - **Evidence**: the claims in the PR match the logged run; noise-band caveats stated.
 4. Post the review: `gh pr review <n> --comment --body "<findings>"` (or `--approve` if clean and
-   the user agrees). Never merge without the user's go-ahead.
+   the user agrees). Do not merge from this skill: the review job merges on a clean verdict
+   (docs/TEAM_SETUP.md), unless the PR is labelled `no-auto`.

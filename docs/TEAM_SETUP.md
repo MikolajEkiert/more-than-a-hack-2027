@@ -42,13 +42,27 @@ them). Invoke the same workflows (`/do-task NN`, ...).
 own clone. For each open, non-draft PR by a repo collaborator it does one step per head commit:
 
 1. **Review** (Sonnet 5.5, effort high, read-only tools) following `/review-pr`; one comment from
-   the `gh` account of that machine, starting with `Verdict: looks good | needs changes | blocking`.
+   the `gh` account of that machine, starting with a verdict:
+   - `looks good`: merge as it is. Optional improvements go under "Notes (non-blocking)".
+   - `needs changes`: a defect that must be fixed before the PR lands.
+   - `blocking`: the PR breaks a hard rule of AGENTS.md section 2.
 2. **Fix**, if the verdict is not "looks good": a second session (Opus 5.5) edits a checkout of the
    PR branch. The script then runs `make check`, commits and pushes to the branch (never a
-   force-push), and comments what was fixed, what was left and what needs a human. The new commit is
+   force-push), and comments three lists: fixed, not changed, needs a human. The new commit is
    reviewed on the next run. At most 3 fix rounds per PR.
-3. **Merge**, if the verdict is "looks good": the script merges the PR into a scratch checkout of
-   main, runs `make check` there, and only then merges on GitHub (a merge commit).
+3. **Merge**: the script merges the PR into a scratch checkout of main, runs `make check` there, and
+   only then merges on GitHub (a merge commit). This happens when the verdict is "looks good",
+   and also when the fixer has nothing left it can fix.
+
+**Deferred findings do not block.** "Not changed" and "Needs a human" in the fixer's comment are
+findings it deliberately left alone: not real, already accepted, outside the files it may edit
+(scripts, Makefile, AGENTS.md, CI), or a choice between approaches rather than a bug. The next
+review is told about them and does not count them. The PR is merged with a "follow-ups" comment;
+turn the ones that matter into a task.
+
+**The job stops and asks for a human in two cases only:** a `blocking` verdict the fixer cannot
+clear, and a PR that changes organiser code or data (`evaluation/`, `starter/`, `data/`,
+`submission/`).
 
 Controls:
 - Label a PR **`no-auto`**, or keep it a draft, and it is not fixed or merged.
