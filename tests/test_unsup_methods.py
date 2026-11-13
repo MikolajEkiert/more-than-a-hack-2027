@@ -2,6 +2,7 @@
 
 import numpy as np
 
+from possession import features
 from possession.match import AWAY, HOME, Match
 from possession.stages.ball_state import stoppage_evidence
 from possession.stages.decode import switch_cost
@@ -77,6 +78,22 @@ def test_control_evidence_carrier_duel_and_passing_ball():
     passing = control_evidence(_match(flying, np.stack([standing, away], axis=1), np.zeros((n, 2))))
     near = ~np.isnan(passing)
     assert near.any() and passing[near].max() < 0.7  # weak evidence, far from the carrier's 0.9+
+
+
+def test_nearest_by_team_breaks_ties_low_and_marks_a_missing_team():
+    n = 3
+    ball = np.tile(np.array([[50.0, 34.0]]), (n, 1))
+    # slots: home, home, away, away; both home players 2 m from the ball (a tie)
+    xy = np.tile(np.array([[52.0, 34.0], [48.0, 34.0], [50.0, 37.0], [60.0, 34.0]]), (n, 1, 1))
+    xy[1, 2:] = np.nan  # frame 1: the whole away team is missing
+    xy[2] = np.nan  # frame 2: nobody is tracked
+    match = _match(ball, xy, np.zeros((n, 4)), teams=(HOME, HOME, AWAY, AWAY))
+    near = features.nearest_by_team(match)
+    np.testing.assert_allclose(near["distance"][0], [2.0, 3.0])
+    np.testing.assert_array_equal(near["slot"][0], [0, 2])  # the tie goes to the lowest slot
+    assert near["slot"][1, 1] == -1 and np.isnan(near["distance"][1, 1])
+    assert near["slot"][1, 0] == 0
+    assert (near["slot"][2] == -1).all() and np.isnan(near["distance"][2]).all()
 
 
 def _decode(alive, home, **params):
