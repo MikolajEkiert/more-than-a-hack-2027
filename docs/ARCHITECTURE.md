@@ -47,6 +47,13 @@ docs/DECISIONS.md, before building on it.
 Derived quantities shared by several methods live in `features.py` and are memoised per match
 (`features.nearest_player`, `features.tagging_mask`, ...).
 
+## Several sources for one stage
+
+`ball_state.blend` and `team.blend` combine sources (registered methods, or files of per-frame
+probabilities from a model outside the registry) as a weighted sum of log-odds. This is how a
+supervised model is fused with the label-free evidence: before the decoder, so the output is
+still whole possessions. Contract and decision protocol: docs/FUSION.md.
+
 ## Evaluation without tuning on the public window
 
 - `scoring.diagnostics`: possession count, mean duration, home share and label shares, all with no GT.

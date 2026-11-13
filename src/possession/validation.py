@@ -513,7 +513,8 @@ def degrade(
                 players[frame : frame + out, slot] = np.nan
                 frame += out + int(rng.exponential(mean_in)) + 1
 
-    return replace(match, ball=ball, players=players, _cache={})
+    game = f"{match.game}@{profile}#{seed}"  # a name per condition (fusion.from_file uses it)
+    return replace(match, game=game, ball=ball, players=players, _cache={})
 
 
 # -- scoring ----------------------------------------------------------------------------------

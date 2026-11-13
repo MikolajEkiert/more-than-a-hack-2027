@@ -121,3 +121,17 @@ def stoppage_evidence(
         llr = llr + np.where(waiting, kickoff_llr, 0.0)
 
     return (1.0 / (1.0 + np.exp(-np.clip(llr, -30, 30)))).astype(np.float32)
+
+
+@register("ball_state", "blend")
+def blend(match: Match, sources: list = ("stoppage_evidence",), weights: list = ()) -> np.ndarray:
+    """Weighted sum of the log-odds of several ball_state sources (methods or probability files).
+
+    `sources` lists registered methods by name, or tables `{method = "...", <its parameters>}` or
+    `{file = "path/{game}.npz"}`; `weights` gives one weight per source (all 1 if empty). See
+    docs/FUSION.md. A frame on which no source has a value counts as even odds.
+    """
+    from possession import fusion
+
+    out = fusion.blend(match, "ball_state", sources, weights)
+    return np.where(np.isnan(out), 0.5, out).astype(np.float32)

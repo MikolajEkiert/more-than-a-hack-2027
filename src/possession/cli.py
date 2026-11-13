@@ -9,6 +9,7 @@
     possession validate CONFIG... [--profile P] [--against CONFIG] [--games a,b] [--seeds 0,1,2]
                                            score configs on other, labelled matches
     possession calibrate [--write]         fit a degradation profile to the published baselines
+    possession export [--profile P]        write the validation conditions' tracking to .npz
     possession submit configs/x.toml --team NAME
                                            final file: run twice, require identical bytes,
                                            validate with the official script, write submission/
@@ -176,6 +177,33 @@ def cmd_validate(args) -> int:
     return 0
 
 
+def cmd_export(args) -> int:
+    """Write every validation condition's tracking to .npz, for a model that lives elsewhere."""
+    import numpy as np
+
+    from possession import validation
+
+    games = _csv(args.games) if args.games else list(validation.GAMES)
+    seeds = [int(seed) for seed in _csv(args.seeds)]
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    profile = None if args.clean else args.profile
+    for _game, _seed, match, _truths in validation.conditions(games, seeds, profile):
+        path = out_dir / f"{match.game}.npz"
+        np.savez_compressed(
+            path,
+            ball=match.ball,
+            players=match.players,
+            team_of_track=match.team_of_track,
+            half=match.half,
+            fps=np.array(match.fps),
+            pitch=np.array(match.pitch),
+        )
+        print(f"wrote {_rel(path)}  ({match.n_frames} frames)")
+    print("no labels are written; return per-frame probabilities named '<same name>.npz'")
+    return 0
+
+
 def cmd_calibrate(args) -> int:
     """Fit a degradation profile to the organisers' published full-match baseline scores."""
     from possession import validation
@@ -284,6 +312,14 @@ def main(argv=None) -> int:
     p.add_argument("--note", default="")
     p.add_argument("--no-log", action="store_true")
     p.set_defaults(fn=cmd_validate)
+
+    p = sub.add_parser("export", help="write the validation conditions' tracking to .npz")
+    p.add_argument("--out", default=str(REPO_ROOT / ".cache" / "exports"))
+    p.add_argument("--games", default="")
+    p.add_argument("--seeds", default="0,1,2")
+    p.add_argument("--profile", default="label_free")
+    p.add_argument("--clean", action="store_true")
+    p.set_defaults(fn=cmd_export)
 
     p = sub.add_parser("calibrate", help="fit a degradation profile to the published baselines")
     p.add_argument("--games", default="")

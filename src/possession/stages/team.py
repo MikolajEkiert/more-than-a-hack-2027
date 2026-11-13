@@ -206,3 +206,17 @@ def touch_episodes(
         segment = out[gap_start:gap_stop]
         out[gap_start:gap_stop] = np.where(np.isnan(segment), fill, segment)
     return out
+
+
+@register("team", "blend")
+def blend(match: Match, sources: list = ("touch_episodes",), weights: list = ()) -> np.ndarray:
+    """Weighted sum of the log-odds of several team sources (methods or probability files).
+
+    `sources` lists registered methods by name, or tables `{method = "...", <its parameters>}` or
+    `{file = "path/{game}.npz"}`; `weights` gives one weight per source (all 1 if empty). See
+    docs/FUSION.md. NaN from a source means it has no vote on that frame; the result is NaN only
+    where no source votes.
+    """
+    from possession import fusion
+
+    return fusion.blend(match, "team", sources, weights).astype(np.float32)
