@@ -1,0 +1,53 @@
+{
+  "author": "MikolajEkiert",
+  "config": {
+    "ball_state": {
+      "method": "stoppage_evidence"
+    },
+    "decode": {
+      "method": "switch_cost"
+    },
+    "game": null,
+    "name": "unsup_control",
+    "team": {
+      "method": "control_evidence"
+    }
+  },
+  "config_path": "configs/unsup_control.toml",
+  "csv_sha256": "",
+  "diagnostics": {
+    "fps": 25,
+    "home_share": 0.5496,
+    "label_share_graded": {
+      "A": 0.3087,
+      "D": 0.3146,
+      "H": 0.3767,
+      "X": 0.0
+    },
+    "mean_possession_s": 13.44,
+    "n_frames": 143761,
+    "n_possessions": 292
+  },
+  "external": {
+    "alive_dead_f1": 0.9564,
+    "condition": "degraded(seed=0)",
+    "game": "metrica-sg3",
+    "macroF1": 0.8522,
+    "n_gt_possessions": 386,
+    "n_pred_possessions": 292,
+    "spellF1": 0.5032,
+    "spellF1_interval": [
+      0.466,
+      0.5457
+    ],
+    "team_acc_both_alive": 0.863
+  },
+  "git_branch": "task/03-stoppage-evidence",
+  "git_commit": "8fef60b",
+  "git_dirty": true,
+  "name": "unsup_control",
+  "note": "task 03-05: control version vs baseline windows, degraded Metrica SG3 with ball smoothing 0.6 s",
+  "public_sanity": null,
+  "seconds": 2.4,
+  "time_utc": "2026-11-13T21:55:38Z"
+}

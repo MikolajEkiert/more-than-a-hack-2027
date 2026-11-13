@@ -1,0 +1,45 @@
+{
+  "author": "MikolajEkiert",
+  "config": {
+    "ball_state": {
+      "method": "stoppage_evidence"
+    },
+    "decode": {
+      "method": "switch_cost"
+    },
+    "game": null,
+    "name": "unsup_control",
+    "team": {
+      "method": "control_evidence"
+    }
+  },
+  "config_path": "configs/unsup_control.toml",
+  "csv_sha256": "29af8cbdb1e8563f4da97b0600f1046bffd2048fb5db053f68747f9a810a33ed",
+  "diagnostics": {
+    "fps": 25,
+    "home_share": 0.6641,
+    "label_share_graded": {
+      "A": 0.1854,
+      "D": 0.4481,
+      "H": 0.3665,
+      "X": 0.0
+    },
+    "mean_possession_s": 9.8,
+    "n_frames": 199319,
+    "n_possessions": 358
+  },
+  "git_branch": "task/03-stoppage-evidence",
+  "git_commit": "8fef60b",
+  "git_dirty": true,
+  "name": "unsup_control",
+  "note": "task 03-05: unsupervised control version on the match (hand-set, no fitting)",
+  "public_sanity": {
+    "macroF1": 0.7947,
+    "n_gt_possessions": 17,
+    "n_pred_possessions": 19,
+    "note": "public 5 min, 17 possessions: sanity only, never for choosing between versions",
+    "spellF1": 0.4333
+  },
+  "seconds": 3.5,
+  "time_utc": "2026-11-13T21:55:49Z"
+}

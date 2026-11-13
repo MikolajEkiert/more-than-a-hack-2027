@@ -215,3 +215,31 @@ def ball_gaps(match: Match) -> dict:
         }
 
     return _memo(match, "ball_gaps", compute)
+
+
+def nearest_by_team(match: Match) -> dict:
+    """Nearest tracked player of each team to the ball, per frame.
+
+    Keys: `distance` (n, 2) metres and `slot` (n, 2) track index, column 0 home and 1 away;
+    NaN / -1 where the ball or that whole team is missing. Ties go to the lowest slot.
+    """
+
+    def compute():
+        n = match.n_frames
+        distance = np.full((n, 2), np.nan)
+        slot = np.full((n, 2), -1, dtype=np.int64)
+        for start in range(0, n, CHUNK):
+            stop = min(n, start + CHUNK)
+            delta = match.players[start:stop, :, :2] - match.ball[start:stop, None, :2]
+            squared = delta[..., 0] ** 2 + delta[..., 1] ** 2
+            squared = np.where(np.isnan(squared), np.inf, squared)
+            for team in (0, 1):
+                mine = np.where(match.team_of_track[None, :] == team, squared, np.inf)
+                best = np.argmin(mine, axis=1)
+                best_sq = mine[np.arange(stop - start), best]
+                found = np.isfinite(best_sq)
+                distance[start:stop, team][found] = np.sqrt(best_sq[found])
+                slot[start:stop, team][found] = best[found]
+        return {"distance": distance, "slot": slot}
+
+    return _memo(match, "nearest_by_team", compute)

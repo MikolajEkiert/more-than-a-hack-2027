@@ -1,6 +1,6 @@
 ---
-status: todo
-owner:
+status: doing
+owner: MikolajEkiert (Claude)
 stage: decode
 ---
 
@@ -29,3 +29,9 @@ occlusion = free; never across a hand-over). Needs soft inputs from 03 and 04.
 - [ ] `make check` green
 
 ## Log
+- 2026-11-13 · MikolajEkiert/Claude · `decode.switch_cost` added (Viterbi over H/A/D with switching
+  costs, per half). Synthetic tests: a single-frame flip creates no possession; a sustained
+  change lands within 3 frames; no `X` inside a half. Same inputs, external match:
+  `unsup_control` 0.503 [0.466, 0.546] against 0.321 for `majority_vote` on the baseline stages.
+  With perfect inputs it scores 0.994. Not done: explicit durations, boundary rules across
+  ball gaps.
