@@ -1,0 +1,11 @@
+# The possession pipeline in solution/ and notebooks/possession_lgbm.ipynb. Pinned: the rules
+# require that running the repository regenerates the identical submission file.
+#
+#   python -m venv .venv && .venv/Scripts/python -m pip install -r requirements-solution.txt
+numpy==1.26.4
+pandas==2.2.3
+lightgbm==4.5.0
+matplotlib==3.9.2
+nbformat==5.10.4
+nbclient==0.10.0
+ipykernel==6.29.5
