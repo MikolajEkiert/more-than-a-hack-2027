@@ -60,6 +60,8 @@ MERGE_METHOD="${PR_MERGE_METHOD:-merge}"  # merge | squash | rebase
 MAX_FAILURES=2
 MAX_FIX_ROUNDS=3
 # Organiser code and data: a PR that changes these is never merged automatically (AGENTS.md 2.5, 2.6).
+# This is a path test on the PR's diff against main, done here, so it does not depend on
+# scripts/check_repo.py or the manifest, which a PR could change together.
 ORGANISER_RE='^(evaluation/|starter/|data/|submission/)'
 # The fixer may never change these: the above plus everything that makes up the `make check` gate
 # and this job's own instructions (a prompt-injected fixer must not be able to weaken the gate).
@@ -100,14 +102,15 @@ redact() {
     -e 's/AKIA[0-9A-Z]{16}/[redacted key]/g'
 }
 
-# good | changes | blocking, from the first non-empty line. Anything unclear is "changes".
+# good | changes | blocking, from the first non-empty line, which must START with the verdict
+# ("Verdict: looks good (nothing blocking)" is good). Anything unclear is "changes".
 verdict_of() {
   local first
-  first="$(printf '%s\n' "$1" | grep -m1 -v '^[[:space:]]*$' | tr '[:upper:]' '[:lower:]')"
+  first="$(printf '%s\n' "$1" | grep -m1 -v '^[[:space:]]*$' | tr '[:upper:]' '[:lower:]' \
+    | sed -E 's/^[^a-z]*//')"
   case "$first" in
-    *blocking*) echo blocking ;;
-    *"needs changes"*) echo changes ;;
-    *"looks good"*|*"no findings"*) echo good ;;
+    "verdict: looks good"*|"no findings"*) echo good ;;
+    "verdict: blocking"*) echo blocking ;;
     *) echo changes ;;
   esac
 }
@@ -258,8 +261,8 @@ Your final message is posted on the PR. Markdown, under 250 words, three short l
   # Files that differ from both the PR head and main are the fixer's own edits (a file that merely
   # came in with main equals main; a file the PR already changed equals the PR head).
   mine="$(comm -12 \
-    <(git -C "$FIXTREE" diff --cached --name-only "$sha" | sort) \
-    <(git -C "$FIXTREE" diff --cached --name-only origin/main | sort))"
+    <(git -C "$FIXTREE" diff --cached --no-renames --name-only "$sha" | sort) \
+    <(git -C "$FIXTREE" diff --cached --no-renames --name-only origin/main | sort))"
   bad="$(printf '%s\n' "$mine" | grep -E "$PROTECTED_RE" || true)"
   if [ -z "$bad" ] && [ -n "$mine" ]; then
     bad="$(cd "$FIXTREE" && printf '%s\n' "$mine" | while read -r f; do
@@ -341,7 +344,7 @@ $FOOTER"
 try_merge() {
   local number="$1" sha="$2" branch="$3" note="${4:-}" organiser
   # Organiser files and the manifest are checked by code the PR itself can change, so decide here.
-  organiser="$(git -C "$REPO_DIR" diff --name-only "origin/main...$sha" | grep -E "$ORGANISER_RE" || true)"
+  organiser="$(git -C "$REPO_DIR" diff --no-renames --name-only "origin/main...$sha" | grep -E "$ORGANISER_RE" || true)"
   if [ -n "$organiser" ]; then
     log "#$number: changes organiser or guard files, leaving the merge to a human"
     comment "$number" "### Claude auto-merge skipped at ${sha:0:7}
