@@ -104,20 +104,7 @@ def stoppage_evidence(
         llr = llr + np.where(seen & (ball_speed >= moving_m_s) & (edge >= 0), moving_llr, 0.0)
 
     if kickoff_llr:
-        setups = features.kickoffs(match)
-        waiting = np.zeros(n, dtype=bool)
-        for start, kick in zip(setups["start"].tolist(), setups["kick"].tolist(), strict=True):
-            waiting[start:kick] = True
-        for number in (1, 2):
-            in_half = np.flatnonzero(match.half == number)
-            first = setups["start"][match.half[setups["start"]] == number][:1]
-            if not len(in_half) or not len(first):
-                continue
-            begin, start = int(in_half[0]), int(first[0])
-            before = speed[begin:start]
-            if 0 < start - begin <= kickoff_wait_s * fps and not np.isnan(before).all():
-                if np.nanmedian(before) < kickoff_wait_speed_m_s:
-                    waiting[begin:start] = True
+        waiting = features.kickoff_wait(match, kickoff_wait_s, kickoff_wait_speed_m_s)
         llr = llr + np.where(waiting, kickoff_llr, 0.0)
 
     return (1.0 / (1.0 + np.exp(-np.clip(llr, -30, 30)))).astype(np.float32)
@@ -135,3 +122,21 @@ def blend(match: Match, sources: list = ("stoppage_evidence",), weights: list = 
 
     out = fusion.blend(match, "ball_state", sources, weights)
     return np.where(np.isnan(out), 0.5, out).astype(np.float32)
+
+
+@register("ball_state", "kickoff_wait")
+def kickoff_wait(
+    match: Match,
+    kickoff_llr: float = -8.0,
+    kickoff_wait_s: float = 300.0,
+    kickoff_wait_speed_m_s: float = 2.5,
+) -> np.ndarray:
+    """Dead while play waits for a kick-off (`features.kickoff_wait`), no opinion elsewhere.
+
+    A source for `ball_state.blend`: it adds the formation-based kick-off rule to any other
+    evidence of play, for instance a supervised model that has never seen the wait before a
+    half begins. Returns the probability with log-odds `kickoff_llr` while waiting, 0.5 otherwise.
+    """
+    waiting = features.kickoff_wait(match, kickoff_wait_s, kickoff_wait_speed_m_s)
+    low = 1.0 / (1.0 + np.exp(-kickoff_llr))
+    return np.where(waiting, low, 0.5).astype(np.float32)

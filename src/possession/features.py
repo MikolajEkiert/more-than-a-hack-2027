@@ -346,3 +346,34 @@ def kickoffs(
         lag_s,
     )
     return _memo(match, key, compute)
+
+
+def kickoff_wait(match: Match, wait_s: float = 300.0, wait_speed_m_s: float = 2.5) -> np.ndarray:
+    """(n,) bool: frames where play is waiting for a kick-off.
+
+    Every kick-off set-up (`kickoffs`) up to its kick. At the start of a half, the wait before the
+    first set-up as well, if that set-up begins within `wait_s` and the players were not running
+    before it (median `collective_speed` below `wait_speed_m_s`); a half whose data starts at the
+    kick-off has no such wait.
+    """
+
+    def compute():
+        fps = match.fps
+        setups = kickoffs(match)
+        speed = collective_speed(match)
+        waiting = np.zeros(match.n_frames, dtype=bool)
+        for start, kick in zip(setups["start"].tolist(), setups["kick"].tolist(), strict=True):
+            waiting[start:kick] = True
+        for number in (1, 2):
+            in_half = np.flatnonzero(match.half == number)
+            first = setups["start"][match.half[setups["start"]] == number][:1]
+            if not len(in_half) or not len(first):
+                continue
+            begin, start = int(in_half[0]), int(first[0])
+            before = speed[begin:start]
+            if 0 < start - begin <= wait_s * fps and not np.isnan(before).all():
+                if np.nanmedian(before) < wait_speed_m_s:
+                    waiting[begin:start] = True
+        return waiting
+
+    return _memo(match, ("kickoff_wait", wait_s, wait_speed_m_s), compute)
