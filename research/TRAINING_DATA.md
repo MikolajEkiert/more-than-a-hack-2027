@@ -5,21 +5,26 @@ Wszystkie fakty o zbiorach zweryfikowane w źródłach (linki na końcu) lub w k
 
 ## TL;DR
 
-1. **Rdzeń treningowy = IDSSE (7 meczów) + PFF WC2022 (64 mecze).** Tylko te dwa otwarte zbiory dają
-   **per-klatkowe** `ball_state` + `ball_owning_team` pasujące semantyką do naszego GT. PFF ma ~9× więcej
-   meczów niż IDSSE, a w `COMPETITORS.md` prawie nikt go nie użył do treningu — to nasza największa
-   niewykorzystana przewaga. IDSSE trzymamy jako bench o semantyce "złotej" (natywne flagi TRACAB).
-2. **Drugi krąg (słabsze etykiety, inny provider)**: SkillCorner (10 meczów, 10 fps), Metrica sample (3,
-   **ten sam provider co ATD**, etykiety z eventów), FOOTPASS (54 mecze z top-lig, pozycje z broadcastu +
-   play-by-play), SoccerTrack v2 (10 meczów amatorskich, CC BY, panorama + eventy).
-3. **Najlepsza metoda uczenia** = nadzorowany trening na zharmonizowanych etykietach + **realistyczna
+1. **Konwencja etykiet: Metrica sample.** To ten sam provider co GT; w jego poprawionym trackingu
+   martwa piłka = brak pozycji piłki (`docs/research/UNSUPERVISED_RESEARCH.md` §2), więc Sample Game 3
+   daje mechaniczne D w tej samej konwencji. Tylko 3 mecze — to bench i źródło konwencji, nie wolumen.
+2. **Wolumen: IDSSE (7) + PFF WC2022 (64).** Tylko te dwa otwarte zbiory mają per-klatkowe
+   `ball_state` + `ball_owning_team`, ale **w innej konwencji niż GT**. Zmierzone na IDSSE J03WMX:
+   8.98 posiadań na minutę gry (okno publiczne ~4.2), 37% posiadań < 2 s. Wchłanianie krótkich
+   wtrąceń A-B-A < 2 s daje 5.99, < 3 s — 5.08 (§2.1). Bez takiej harmonizacji model nauczy się
+   2× za częstych zmian. PFF ma ~9× więcej meczów niż IDSSE i w `COMPETITORS.md` prawie nikt go nie
+   trenował — niewykorzystana szansa, ale jego konwencję trzeba zmierzyć tak samo przed użyciem.
+3. **Drugi krąg (słabsze etykiety)**: SkillCorner (10 meczów, 10 fps), FOOTPASS (54 mecze z top-lig,
+   pozycje z broadcastu + play-by-play), SoccerTrack v2 (10 meczów amatorskich, CC BY, panorama + eventy).
+4. **Najlepsza metoda uczenia** = nadzorowany trening na zharmonizowanych etykietach + **realistyczna
    degradacja do profilu ATD z domain randomisation** + **samonadzorowany pretraining (masked trajectory
-   modelling) na wszystkich trajektoriach, łącznie z nieetykietowanym BAR-ATH** — to ostatnie jest wprost
-   dozwolone przez `RULES.md` i jest jedyną legalną formą adaptacji do meczu testowego.
-4. **Czego oczekiwać** (literatura, dane własnościowe): alive/dead z samych zawodników 92% acc. per klatka
+   modelling)** na wszystkich zewnętrznych trajektoriach. Pretraining także na nieetykietowanym BAR-ATH
+   jest dozwolony przez `RULES.md`, ale uczestnik raportuje e-mail organizatorów z 3.11 zabraniający
+   dopasowywania czegokolwiek na meczu — do potwierdzenia, zanim na tym oprzemy (§1).
+5. **Czego oczekiwać** (literatura, dane własnościowe): alive/dead z samych zawodników 92% acc. per klatka
    (Lang 2022, 102 mecze); 4 stany (pass/possession/uncontrolled/out) bez piłki 80.8%, z piłką ~89%
    (TranSPORTmer, 283 mecze LaLiga). Skala danych pomaga — dlatego PFF.
-5. **Wideo** (opcjonalnie, tylko dla D): SoccerNet-v2 — 500 meczów, ~30.5k znaczników "Ball out of play",
+6. **Wideo** (opcjonalnie, tylko dla D): SoccerNet-v2 — 500 meczów, ~30.5k znaczników "Ball out of play",
    13 klas ujęć kamery (replay/close-up ≈ przerwa). Do detektora przerw na broadcaście, nie do H/A.
 
 ---
@@ -35,7 +40,13 @@ Z `RULES.md` §1–2 i `FAQ.md`:
 | Modele pretrenowane, LLM-y | Dane ludzkie o BAR-ATH od kogokolwiek (Opta, StatsBomb, LaLiga, …) |
 
 Wniosek metodyczny: **pretraining samonadzorowany na ATD BAR-ATH i statystyki nieetykietowane** (rozkład luk
-piłki, szum pozycji) są legalne i są najbardziej bezpośrednią drogą do zmniejszenia domain gap.
+piłki, szum pozycji) są według `RULES.md` legalne i są najbardziej bezpośrednią drogą do zmniejszenia
+domain gap.
+
+**Ryzyko:** `docs/research/UNSUPERVISED_RESEARCH.md` §6 cytuje relację uczestnika o e-mailu organizatorów
+z 3.11: nic nie może być trenowane, dopasowane ani kalibrowane na GT ani na dostarczonym wideo, a
+parametry mają pochodzić z danych zewnętrznych. Nie widzieliśmy oryginału. Do czasu potwierdzenia
+każdy krok "na BAR-ATH bez etykiet" musi mieć przełącznik na wariant uczony tylko na danych zewnętrznych.
 
 ---
 
@@ -54,13 +65,24 @@ piłki, szum pozycji) są legalne i są najbardziej bezpośrednią drogą do zmn
 | Licencja | CC-BY 4.0 | darmowe po formularzu (warunki do sprawdzenia przy pobraniu) | MIT |
 | Loader | `kloppy.sportec.load_open_tracking_data(match_id=…)`, HF `pysport/idsse-data` | `kloppy.pff.load_tracking(meta, roster, raw)`; ~3 GB zip, ~1 GB/mecz | `kloppy.skillcorner`, GitHub LFS (~90 MB/mecz) |
 | Klatek (≈) | ~1.0 M | **~11 M** | ~0.6 M (×2.5 po upsamplingu) |
-| Rola u nas | **bench o złotej semantyce + trening** | **główny wolumen treningowy** | test cross-provider, kalibracja luk |
+| Rola u nas | trening + bench (po harmonizacji) | **główny wolumen treningowy** (po harmonizacji) | test cross-provider, kalibracja luk |
 
 Uwagi do harmonizacji:
 
-- **IDSSE**: `BallPossession` przełącza się szybciej niż nasza definicja "controlled possession"; relabel
-  z progiem 2–3 s (wnioski z `COMPETITORS.md`). Dead-ball DFL ma quirki providera (Anfield trenował dwa
-  warianty).
+- **IDSSE — zmierzone przez nas** na J03WMX (kloppy, pełny mecz bez przerwy, 146k klatek):
+
+  | | wartość |
+  |---|---|
+  | udział D | 41.5% (typowe dla całego meczu; 19.6% D w 5-minutowym oknie publicznym nie jest porównywalne) |
+  | przerwy | 103, mediana 15.5 s, żadna < 1 s |
+  | posiadania H/A na minutę gry | **8.98** surowe → 7.40 / **5.99** / 5.08 po wchłonięciu wtrąceń A-B-A < 1 / 2 / 3 s |
+  | posiadania < 2 s | 37% |
+  | okno publiczne GT (dla porównania) | ~4.2 posiadań na minutę gry (17 posiadań, szum ok. ±1 na minutę) |
+
+  Wniosek: `BallPossession` przełącza się na każdy sporny kontakt. Harmonizacja wchłanianiem krótkich
+  wtrąceń (2–3 s) zbliża konwencję do GT, ale jej nie wyrównuje — próg należy dobrać na Metrica sample
+  (ta sama konwencja co GT), nie na oknie publicznym. Dead-ball DFL ma też quirki providera (Anfield
+  trenował dwa warianty).
 - **PFF**: semantyka stanu piłki jest *eventowa*. W kloppy DEAD włącza się tylko po wyjściu piłki i końcu
   połowy — **faule, spalone, kontuzje i VAR nie dają D**. Trzeba dołożyć przerwy z eventów PFF
   (faul → D do następnego `ON_THE_BALL`; sprawdzić typy w specyfikacji PDF dołączonej do zbioru) albo
@@ -106,9 +128,9 @@ Stąd priorytet wolumenu: PFF + FOOTPASS.
 
 | Priorytet | Zbiór | Głowa D | Głowa H/A | Pretraining | Walidacja |
 |---|---|---|---|---|---|
-| 1 | IDSSE (7) | ✔ (złota) | ✔ | ✔ | ✔ LOMO, złota semantyka |
-| 1 | PFF WC2022 (64) | ⚠ po uzupełnieniu przerw | ✔ | ✔ | ✔ provider-held-out |
-| 2 | Metrica sample (3) | ⚠ z eventów | ✔ | ✔ | ✔ ten sam provider co ATD |
+| 1 | Metrica sample (3) | ✔ G3: D = brak piłki w poprawionym trackingu | ⚠ z eventów | ✔ | ✔ **konwencja GT**, ten sam provider |
+| 1 | IDSSE (7) | ✔ natywne flagi | ⚠ po harmonizacji | ✔ | ✔ LOMO |
+| 1 | PFF WC2022 (64) | ⚠ po uzupełnieniu przerw | ⚠ po harmonizacji | ✔ | ✔ provider-held-out |
 | 2 | SkillCorner (10) | ✘ | ✔ | ✔ | ✔ broadcast-like |
 | 2 | FOOTPASS (54) | ⚠ tylko restarty | ✔ | ✔ | opcjonalnie |
 | 3 | SoccerTrack v2 (10) | ⚠ (ew. ręczne etykiety) | ✔ | ✔ | opcjonalnie |
@@ -124,7 +146,8 @@ Stąd priorytet wolumenu: PFF + FOOTPASS.
 - Wspólny schemat klatki: 25 fps, metry, środek boiska (0,0), kierunek ataku znormalizowany per połowa,
   **bez ID zawodników** (zbiory 22 punktów + piłka z maską widoczności).
 - Etykiety → nasza definicja: H/A/D + "controlled possession" (debounce 2–3 s), D zgodnie z GT (restart
-  kończy D). Osobny parametr per provider, sprawdzany na IDSSE (złota semantyka).
+  kończy D). Osobny parametr per provider; docelowe statystyki (posiadania na minutę gry, rozkład
+  długości) z Metrica sample, bo to konwencja GT.
 - Dwie głowy: **P(dead)** (uczona tam, gdzie D jest wiarygodne: IDSSE, PFF po uzupełnieniu, Metrica) i
   **P(home | alive)** (uczona na wszystkim). Opcjonalnie trzecia: P(zmiana posiadania w ±k klatek).
 - Strata pod spellF1: ważenie granic i krótkich posiadań, symetria H↔A (swap jako augmentacja i TTA).
@@ -145,7 +168,8 @@ Zamiast jednego profilu — **domain randomisation** wokół niego (MassiuSoft, 
   per klatka; maska wejściowa naturalnie modeluje brak piłki.
 - Dla nas: pretraining (rekonstrukcja zamaskowanych segmentów zawodników **i piłki**) na wszystkich
   trajektoriach z §2 **+ ATD BAR-ATH (tactical i broadcast)**, potem fine-tune głów z §3.1. Maskowanie
-  piłki w pretrainingu = dokładnie nasze 41% luk. To legalna adaptacja do domeny testowej.
+  piłki w pretrainingu = dokładnie nasze 41% luk. Według `RULES.md` to legalna adaptacja do domeny
+  testowej; do potwierdzenia e-maila z 3.11 (§1) trzymać wariant pretrenowany bez BAR-ATH.
 
 ### 3.4 Zadania pomocnicze (multi-task)
 
@@ -192,14 +216,33 @@ Zamiast jednego profilu — **domain randomisation** wokół niego (MassiuSoft, 
 
 | Krok | Dane | Model | Cel |
 |---|---|---|---|
-| 0 | IDSSE + Metrica, degradacja v1 | 2× LightGBM (dead, home \| alive) + Viterbi | bench LOMO działa, ~0.55–0.65 na degradowanym DFL |
-| 1 | + PFF (64), harmonizacja przerw, resampling | te same głowy, więcej danych | zysk z wolumenu; test provider-held-out |
+| 0 | Metrica G1–3 (konwencja) + IDSSE po harmonizacji, degradacja v1 | 2× LightGBM (dead, home \| alive) + Viterbi | bench LOMO działa, ~0.55–0.65 na degradowanym DFL |
+| 1 | + PFF (64): formularz PFF, pomiar konwencji jak dla IDSSE, uzupełnienie przerw, resampling | te same głowy, więcej danych | zysk z wolumenu; test provider-held-out |
 | 2 | + SkillCorner, FOOTPASS do H/A; domain randomisation | TCN / bi-GRU per klatka (ensemble z GBDT) | ≥0.70 na benchu zewnętrznym (poziom czołówki) |
 | 3 | wszystkie trajektorie + ATD BAR-ATH bez etykiet | masked-trajectory pretraining → fine-tune; głowa imputacji piłki | odporność na 41% luk, adaptacja do domeny |
 | 4 | SoccerNet-v2 (wideo) | detektor "ball out / restart" + klasa ujęcia na broadcaście | lepsze D, jeśli broadcast da się zsynchronizować |
 
-Ryzyka: harmonizacja przerw w PFF (bez niej głowa D się zepsuje), synchronizacja broadcastu (65.8%
-klatek z homografią), licencje (PFF formularz, Metrica nieformalna, FOOTPASS wideo NDA).
+Ryzyka: konwencja etykiet (IDSSE i PFF wymagają harmonizacji, §2.1), harmonizacja przerw w PFF
+(bez niej głowa D się zepsuje), synchronizacja broadcastu (65.8% klatek z homografią), licencje
+(PFF formularz, Metrica nieformalna, FOOTPASS wideo NDA), e-mail organizatorów z 3.11 (§1).
+
+## 5. Relacja do `docs/research/UNSUPERVISED_RESEARCH.md`
+
+Plan zespołu na 14–17.11 to nienadzorowany HSMM (gap classifier + touch-based ownership + mirror-tied
+EM) z konwencją z Metrica sample. Ten dokument go nie zastępuje, tylko wskazuje, gdzie dane zewnętrzne
+pomagają temu planowi:
+
+- **Harness walidacyjny** (task 02): Metrica G1–3 jako bench w konwencji GT, IDSSE i PFF po
+  harmonizacji jako dodatkowe mecze; wszystkie po degradacji do profilu ATD.
+- **Hiperparametry strukturalne** (koszty przełączeń, rozkłady czasów trwania HSMM, progi gap
+  classifiera) — z tych benchów, nie z meczu ani z okna publicznego.
+- **Opcjonalny etap nadzorowany** (krok 0–2 w §4) — tylko jeśli wygra z HSMM na benchu zewnętrznym
+  o więcej niż szum (±0.04). Zgadza się z warunkiem z tamtego dokumentu ("kept only on an external win").
+- Wspólna rozbieżność do rozstrzygnięcia: tamten dokument ocenia, że trening na danych zewnętrznych
+  "nie przenosi się" (relacje uczestników). `COMPETITORS.md` daje obraz mieszany: AndaAnda 0.776
+  na benchu → 0.480 publicznie, ale SAM-Analytics 0.741 → 0.764 i Team Sigue (multi-provider) → 0.662.
+  Przy 17 posiadaniach w oknie publicznym tego nie rozstrzygniemy; rozstrzyga provider-held-out na
+  benchu z konwencją Metrica.
 
 ---
 
