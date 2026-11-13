@@ -1,0 +1,23 @@
+# Hybrid found by the head-to-head of 2026-11-14 (docs/FUSION.md section 6): the supervised
+# model's evidence for both stages, our formation-based kick-off rule, our decoder with the
+# settings of unsup_v2 (not re-tuned). The probability files are written by
+# scripts/supervised_probs.py from the supervised branch; they are local (.cache/ is gitignored),
+# so this config runs only where they exist, and is not a submission candidate until the model
+# is a registered method that the repository can retrain by itself.
+name = "hybrid_supervised"
+
+[ball_state]
+method = "blend"
+sources = [{ file = ".cache/supervised/{game}.npz" }, "kickoff_wait"]
+
+[team]
+method = "blend"
+sources = [{ file = ".cache/supervised/{game}.npz" }]
+
+[decode]
+method = "switch_cost"
+turnover_cost = 5.0
+stop_cost = 12.0
+restart_cost = 12.0
+snap_start_s = 3.0
+snap_end_s = 3.0

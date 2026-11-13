@@ -339,3 +339,17 @@ def test_restart_goes_to_the_team_standing_at_the_ball():
     close = np.stack([taker, np.tile(np.array([2.0, 2.0]), (n, 1))], axis=1)  # opponent right there
     contested = touch_episodes(_match(ball, close, np.zeros((n, 2))))
     assert np.isnan(contested[100:103]).all()  # no clear taker: no claim
+
+
+def test_kickoff_wait_is_a_source_of_its_own():
+    from possession import fusion
+    from possession.stages.ball_state import kickoff_wait
+
+    match = _kickoff_match()
+    wait = kickoff_wait(match)
+    assert wait[:195].max() < 0.001 and set(np.unique(wait[300:])) == {np.float32(0.5)}
+    assert not np.isnan(wait).any()
+    # blended with a source that says "live" everywhere, the wait still comes out dead
+    live = np.full(match.n_frames, 0.95)
+    both = fusion.combine([live, wait.astype(float)], [1.0, 1.0])
+    assert both[:195].max() < 0.01 and both[300:].min() > 0.94

@@ -40,3 +40,12 @@ tracking of every validation condition for a model kept outside the repo.
   docs/FUSION.md. Example: blending our two team methods scores 0.589 against 0.598 for
   `touch_episodes` alone on the external matches (rejected by the rule): correlated sources add
   nothing. Next: the supervised track delivers methods or files; then steps 1-5 of FUSION.md.
+- 2026-11-14 · MikolajEkiert/Claude · The supervised branch was pushed (`supervised_approach`). Ran
+  it in a separate worktree, wrote its probabilities with `scripts/supervised_probs.py`, scored
+  everything on the external matches. Result: its evidence + our kick-off rule + our decoder
+  (`configs/hybrid_supervised.toml`) is accepted against both single tracks under both profiles
+  (0.659 / 0.561 against 0.621 / 0.506 for the branch as is and 0.598 / 0.448 for `unsup_v2`).
+  Added `ball_state.kickoff_wait`. Not done: making the supervised model a registered,
+  retrainable method (docs/FUSION.md section 6 lists what that needs); until then the hybrid
+  runs only where the probability files exist.
+

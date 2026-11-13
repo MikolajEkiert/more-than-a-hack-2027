@@ -119,3 +119,70 @@ source has seen something the first has not.
 For whichever combination is submitted, `docs/TECHNICAL_REPORT.md` section 3 lists every dataset
 the supervised model was trained on (source, who labelled it, how much), and section 5 cites the
 `experiments/runs/` files of the comparison above.
+
+## 6. Measured on 2026-11-14 against the branch `supervised_approach`
+
+What was run. The branch at commit 8db66f2 (package `solution/`), trained exactly as its notebook
+does: seven IDSSE matches, degradation calibrated on the unlabelled tracking of the match (ball
+missing 40.7%, mean burst 17.2 s, 93% of players visible), 203 features, weighted LightGBM for
+H/A/D plus its boundary model. `scripts/supervised_probs.py` wrote its probabilities for the
+competition match and for all 18 validation conditions. It trains on no Metrica match, so all
+three are held out for it. Retrained from scratch with its cache disabled, it gave bit-identical
+probabilities.
+
+Mean spellF1 over three external matches x 3 seeds x 2 label readings (touch / controlled):
+
+| variant | `label_free` | `published_baselines` |
+|---|---|---|
+| `unsup_v2` (ours) | 0.598 (0.560 / 0.636) | 0.448 (0.418 / 0.477) |
+| supervised as is, its own decoder | 0.621 (0.634 / 0.608) | 0.506 (0.517 / 0.494) |
+| **`hybrid_supervised`**: its evidence, our kick-off rule, our decoder | **0.659** (0.643 / 0.675) | **0.561** (0.546 / 0.576) |
+| hybrid + our evidence at half weight, both stages | 0.681 (0.665 / 0.697) | 0.553 (0.545 / 0.561) |
+| our `p_alive` + its `p_home` | 0.656 | 0.549 |
+| its `p_alive` + our `p_home` | 0.600 | 0.448 |
+
+Verdicts of the acceptance rule (`validation.compare`):
+
+- `hybrid_supervised` against the supervised branch as is: +0.038 (touch +0.009, controlled
+  +0.066, 3 of 3 matches) and +0.055 (+0.029, +0.081, 3 of 3): **accepted** under both profiles.
+- `hybrid_supervised` against `unsup_v2`: +0.061 and +0.113: **accepted** under both.
+- Adding our evidence at half weight to the hybrid: +0.022 under `label_free`, -0.007 under
+  `published_baselines`: **not accepted** (it must pass under both).
+- The branch's boundary model as a frame-varying turnover cost in our decoder: between -0.006
+  and +0.010: **not accepted**.
+
+What it says:
+
+- **The supervised evidence is better than ours, and the difference is the team stage.** Team
+  accuracy 0.920 against 0.894 (`label_free`) and 0.888 against 0.826 (`published_baselines`);
+  alive/dead F1 is the same in both tracks (0.934 / 0.932 and 0.927 / 0.916). Swapping stages
+  shows it directly: its `p_home` with our `p_alive` scores like the hybrid, its `p_alive` with
+  our `p_home` scores like `unsup_v2`.
+- **Our decoder adds to its evidence.** With the settings of `unsup_v2`, not re-tuned, its
+  evidence scores 0.04-0.05 above its own decoder. Its decoder was tuned on IDSSE, whose owner
+  flag changes hands twice as often as the Metrica labels; it predicts 328-392 possessions
+  where ours predicts 275-299 on the same evidence.
+- **A worry that did not hold:** its degradation hides the ball at random, so it might not have
+  learned that a long ball gap is usually a stoppage. It has: on the frames of our match
+  without a ball its mean P(alive) is 0.14 (ours 0.15).
+- **On the competition match** (label-free): supervised as is 352 possessions, mean 9.3 s, 48%
+  dead; hybrid 300, 10.7 s, 49%; `unsup_v2` 326, 10.8 s, 44%. The two tracks give the same label
+  on 83% of graded frames. Without a kick-off rule the supervised output is live for 117 s before
+  the second-half kick-off; with `ball_state.kickoff_wait` as a source the hybrid starts 0.2 s
+  from the published anchor, with no constant of this match.
+
+By the protocol of section 4 the hybrid is what the team should build towards. It is **not a
+submission candidate yet**: `configs/hybrid_supervised.toml` reads probability files that only
+exist locally. Before it can be one:
+
+1. The supervised model becomes a pair of registered methods that the repository can retrain by
+   itself (LightGBM and SciPy in `pyproject.toml` and `uv.lock`; IDSSE, 2.7 GB, downloaded at
+   run time), so that `make submit` regenerates the file byte for byte.
+2. Its kick-off rule, which reads the organisers' published kick-off frame, is replaced by
+   `ball_state.kickoff_wait` (AGENTS.md hard rule 1: no constants tied to frames of this match).
+3. Its training data goes into `docs/TECHNICAL_REPORT.md` section 3.
+4. The team settles the open question about fitting on the match: the model's degradation is
+   calibrated on the unlabelled tracking of the competition match.
+5. The turnover cost is the knob that follows the label reading (5 favours `touch`, 8 favours
+   `controlled`); 5 is the value that does not lose under either.
+
