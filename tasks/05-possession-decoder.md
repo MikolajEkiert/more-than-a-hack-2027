@@ -33,5 +33,6 @@ occlusion = free; never across a hand-over). Needs soft inputs from 03 and 04.
   costs, per half). Synthetic tests: a single-frame flip creates no possession; a sustained
   change lands within 3 frames; no `X` inside a half. Same inputs, external match:
   `unsup_control` 0.503 [0.466, 0.546] against 0.321 for `majority_vote` on the baseline stages.
-  With perfect inputs it scores 0.994. Not done: explicit durations, boundary rules across
+  With perfect inputs it scores 0.994. The 0.503 is in-sample: the switching costs (and the team
+  stage's control radius) were chosen on that same match; a held-out score is not measured. Not done: explicit durations, boundary rules across
   ball gaps.

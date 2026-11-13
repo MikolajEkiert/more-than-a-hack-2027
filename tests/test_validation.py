@@ -111,6 +111,33 @@ def test_degrade_is_seeded_pure_and_does_what_it_says():
     assert a._cache == {} and a.n_frames == match.n_frames
 
 
+def test_degrade_smooths_the_ball_only_within_tracked_stretches():
+    n, fps = 400, 25
+    x = np.where(np.arange(n) < 200, 0.0, 10.0)  # a kick: the ball jumps 10 m in one frame
+    x[300:350] = np.nan  # a gap in the tracking
+    ball = np.stack([x, np.full(n, 34.0), np.full(n, np.nan)], axis=1)
+    players = np.full((n, 2, 3), 1.0)
+    match = Match(
+        game="SYNTH", fps=fps, pitch=(105.0, 68.0), ball=ball, players=players,
+        team_of_track=np.array([HOME, AWAY], dtype=np.int8), half=np.ones(n, dtype=np.int8),
+    )  # fmt: skip
+    labels = np.full(n, "H", dtype="<U1")
+    only_smoothing = dict(
+        lost_ball_share=0.0, visible_dead_prob=0.0, ball_offset_m=0.0, players_visible=99.0
+    )
+    out = validation.degrade(match, labels, ball_smooth_s=0.6, **only_smoothing)
+    bx = out.ball[:, 0]
+    assert np.isnan(bx[300:350]).all() and not np.isnan(np.delete(bx, range(300, 350))).any()
+    np.testing.assert_allclose(bx[:180], 0.0)  # far from the kick: unchanged
+    np.testing.assert_allclose(bx[220:300], 10.0)  # next to the gap: not pulled towards 0
+    np.testing.assert_allclose(bx[350:], 10.0)
+    blurred = bx[190:210]
+    assert ((blurred > 0) & (blurred < 10)).sum() >= 10 and np.all(np.diff(blurred) >= 0)
+
+    raw = validation.degrade(match, labels, ball_smooth_s=0.0, **only_smoothing)
+    np.testing.assert_array_equal(raw.ball, match.ball)
+
+
 def test_score_uses_the_official_metric():
     _, labels = _clean_match()
     assert validation.score(labels, labels)["spellF1"] == 1.0
