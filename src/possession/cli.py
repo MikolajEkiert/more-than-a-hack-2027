@@ -3,7 +3,7 @@
     possession methods                     what is already implemented (check before writing code)
     possession run configs/x.toml          produce, validate, diagnose and log one submission
     possession log                         the experiment log as a table
-    possession inspect {ball,players,tagging,labels} [--game G] [--csv F] [--json]
+    possession inspect {ball,players,gaps,tagging,labels} [--game G] [--csv F] [--json]
                                            aggregate statistics of the data or of a submission
                                            (rates, percentiles, histograms; never rows)
     possession submit configs/x.toml --team NAME
@@ -163,7 +163,7 @@ def main(argv=None) -> int:
     p.set_defaults(fn=cmd_log)
 
     p = sub.add_parser("inspect", help="aggregate statistics of the data (never prints rows)")
-    p.add_argument("topic", choices=["ball", "players", "tagging", "labels"])
+    p.add_argument("topic", choices=["ball", "players", "gaps", "tagging", "labels"])
     p.add_argument("--game", default=None, help="default: games.GAME")
     p.add_argument("--csv", help="submission CSV (topic labels)")
     p.add_argument("--json", action="store_true")
