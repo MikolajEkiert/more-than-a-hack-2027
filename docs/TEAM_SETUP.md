@@ -36,6 +36,15 @@ them). Invoke the same workflows (`/do-task NN`, ...).
 3. PR → CI green → a teammate runs `/review-pr <n>` → merge.
 4. `git pull --rebase` on main before starting the next task.
 
+## Automatic AI review of PRs (one machine)
+`make review-watch-install` runs `scripts/pr_review_watch.sh` every 5 minutes via launchd. It
+reviews each new head commit of an open, non-draft PR by a repo collaborator with Claude Code
+(Sonnet 5.5, effort high, read-only tools) following `/review-pr`, and posts one comment from the
+`gh` account of that machine. Test without posting: `DRY_RUN=1 ONLY_PR=<n> scripts/pr_review_watch.sh`.
+State and worktree are in `~/Library/Application Support/mtah-pr-review/`, the log is in
+`~/Library/Logs/mtah-pr-review/`. Stop it with `make review-watch-uninstall`. The laptop must be
+awake and logged in.
+
 ## When the official dataset arrives
 `make guard-on`, commit `scripts/agent_guard.json` and `.cursorignore`, and tell everyone to pull.
 From then on agents cannot read data/, .cache/, submissions or notebook outputs. The terms forbid

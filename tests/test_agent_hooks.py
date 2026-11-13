@@ -62,6 +62,8 @@ class TestGuardOn:
             ".cache/BAR-ATH_match.npz",
             "submission/team.csv",
             "evaluation/results/mine.csv",
+            ".cache",
+            "submission",
         ):
             assert agent_hooks.read_reason(str(REPO_ROOT / path)), path
 

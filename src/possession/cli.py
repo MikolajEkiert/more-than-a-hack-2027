@@ -60,6 +60,11 @@ def _produce(config_path: str, out_dir: Path, rebuild: bool = False):
     from possession.loader import load_match
 
     cfg = config_mod.load(config_path)
+    if cfg.name.startswith("baseline_"):
+        # evaluation/results/baseline_*.csv are organiser files (hash-protected); never overwrite.
+        raise SystemExit(
+            f"FAIL  config name {cfg.name!r}: 'baseline_*' is reserved for the organisers"
+        )
     started = time.time()
     match = load_match(cfg.game, rebuild=rebuild)
     result = pipeline.run(cfg, match)

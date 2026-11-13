@@ -46,7 +46,7 @@ SAFE_PREFIXES = (
     "uv run pytest",
     "make ",
     "git ",
-    "ls",
+    "ls ",
     "du ",
     "python scripts/check_repo.py",
     "uv run python scripts/check_repo.py",
@@ -90,8 +90,9 @@ def read_reason(path: str) -> str | None:
     r = rel(path) or ""
     if r == "data/README.md":
         return None
-    if any(resolved.is_relative_to(d) for d in data_dirs) or r.startswith(
-        (".cache/", "submission/")
+    if any(resolved.is_relative_to(d) for d in data_dirs) or r.split("/")[0] in (
+        ".cache",
+        "submission",
     ):
         return f"DATA GUARD: {r or resolved} is match data; agents never read it directly."
     if fnmatch.fnmatch(r, "evaluation/results/*.csv") and "/baseline_" not in r:

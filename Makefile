@@ -3,7 +3,7 @@
 CONFIG ?= configs/baseline_smooth50.toml
 NOTE ?=
 
-.PHONY: help setup inspect check lint fmt test run methods log eval submit guard-on guard-off protect-update
+.PHONY: help setup inspect review-watch-install review-watch-uninstall review-watch-status check lint fmt test run methods log eval submit guard-on guard-off protect-update
 
 help:  ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
@@ -55,6 +55,15 @@ guard-on:  ## data guard ON: agents may no longer read match data (official data
 guard-off:  ## data guard OFF (sample data only)
 	python3 -c "import json,pathlib;p=pathlib.Path('scripts/agent_guard.json');d=json.loads(p.read_text());d['enabled']=False;d['currently']='sample data: guard off';p.write_text(json.dumps(d,indent=2)+'\n')"
 	rm -f .cursorignore
+
+review-watch-install:  ## local AI review of new PRs every 5 min (ONE machine only; macOS launchd)
+	scripts/review_watch_launchd.sh install
+
+review-watch-uninstall:  ## stop the local PR reviewer
+	scripts/review_watch_launchd.sh uninstall
+
+review-watch-status:  ## is the local PR reviewer running; last log lines
+	scripts/review_watch_launchd.sh status
 
 protect-update:  ## after deliberately pulling an organiser update of evaluation/ or starter/
 	python3 scripts/check_repo.py --update-manifest
