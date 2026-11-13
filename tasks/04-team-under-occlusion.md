@@ -34,7 +34,8 @@ NaN only where there is truly no evidence).
 - 2026-11-13 · MikolajEkiert/Claude · `team.control_evidence` added (evidence only when a player is
   within 2 m of a tracked ball; weak when the ball is passing by; none in a duel). Coverage on
   the external match: evidence on 40% of live frames, right team on 92% of those; team accuracy
-  of the full control pipeline 0.863 against 0.821 for the baseline. This is the stage that limits
+  of the full control pipeline 0.863 against 0.821 for the baseline (in-sample: the 2 m radius
+  was chosen on that match). This is the stage that limits
   the score (see DECISIONS). Not done: any evidence while the ball is not tracked (the decoder
   keeps the last owner), which is this task's original goal.
 - 2026-11-14 · MikolajEkiert/Claude · `team.touch_episodes` added and used by `unsup_v2`: real
