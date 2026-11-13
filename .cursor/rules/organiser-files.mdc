@@ -1,0 +1,9 @@
+---
+description: Organiser-owned files are the scoring specification and are read-only
+globs: evaluation/**,starter/**
+alwaysApply: false
+---
+
+These files belong to the organisers and define how we are scored. Do not edit, reformat or copy
+them. Import from them (`possession_metrics`, `starter.baseline`, `starter.load_*`). New code goes
+in `src/possession/`. CI fails if their hashes change (`scripts/check_repo.py`). See AGENTS.md §2.

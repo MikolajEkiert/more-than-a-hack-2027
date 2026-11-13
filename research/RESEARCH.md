@@ -1,7 +1,9 @@
 # Deep research — Phase 1: Ball Possession
 
 Notatki badawcze zespołu. Źródła: dokumentacja i kod tego repozytorium, literatura naukowa, publiczne
-zbiory danych z **innych** meczów. Celowo **nie** analizowaliśmy rozwiązań innych drużyn.
+zbiory danych z **innych** meczów. Przegląd publicznych repozytoriów innych drużyn jest osobno
+w `research/COMPETITORS.md` (z zastrzeżeniami tam opisanymi); ich liczby nie służą nam za priory
+ani cele.
 Publiczne 5 minut GT służą tu wyłącznie do zrozumienia *semantyki* etykiet — żaden parametr nie
 został z nich wyznaczony.
 
@@ -18,11 +20,13 @@ został z nich wyznaczony.
    walidacyjny do tuningu** z oficjalną metryką, czego publiczne 5 minut dać nie może.
 3. **Luka domenowa**: tamte dane są skorygowane, nasze ATD jest automatyczne (piłka brak w 41%,
    brak ID, fragmentacja tracków). Trzeba **zaszumić dane zewnętrzne tak, żeby wyglądały jak nasze
-   ATD** (rozkład luk piłki, liczba obiektów, fragmentacja) — statystyki szumu wolno mierzyć na
-   naszym meczu, bo nie używają etykiet.
+   ATD** (rozkład luk piłki, liczba obiektów, fragmentacja). Kalibracja szumu na nieetykietowanych
+   statystykach naszego meczu to **szara strefa**: do decyzji zespołu zapisanej w
+   `docs/DECISIONS.md` (patrz `COMPETITORS.md` §6.2). Do tego czasu: SkillCorner i szerokie zakresy.
 4. **Na brakującą piłkę**: modele „ball-free” (Ball Radar, PathCRF — 92% trafności drużyny per
-   klatka z samych trajektorii zawodników) oraz **pseudo-etykiety** na naszym meczu z klatek, gdzie
-   piłka jest widoczna i jednoznacznie przy zawodniku (dozwolone przez RULES.md).
+   klatka z samych trajektorii zawodników). **Pseudo-etykiety** na naszym meczu (z klatek, gdzie
+   piłka jest widoczna i jednoznacznie przy zawodniku) to **szara strefa**: nie stosujemy, dopóki
+   decyzja nie trafi do `docs/DECISIONS.md` (patrz `COMPETITORS.md` §5 i §6.7).
 5. **Na martwą piłkę**: geometria (piłka poza boiskiem, piłka nieruchoma na punkcie stałego
    fragmentu), zachowanie zespołowe (spadek prędkości, ustawienia do stałych fragmentów — Vidal-Codina
    2022), Smart Tagging `SET PIECES` jako kotwice, opcjonalnie gwizdek z audio i modele SoccerNet.
@@ -42,13 +46,16 @@ został z nich wyznaczony.
 - Każde posiadanie waży tyle samo — 0,8-sekundowe tyle co 40-sekundowe.
 - `X` przed liczeniem `spellF1` jest wypełniane **ostatnią** etykietą w połowie (forward-fill), a na
   początku połowy **pierwszą znaną** (back-fill).
-- **Pułapka**: 2. połowa jest oceniana od klatki 110 808, a wznowienie jest dopiero w 113 742.
-  Jeśli wpiszemy tam `X`, back-fill rozciągnie pierwsze posiadanie o ~117 s wstecz i je zabije.
-  **Trzeba jawnie wpisać `D`.**
+- **Pułapka**: 2. połowa jest oceniana od początku swojego bloku (`valid_runs` /
+  `games.half_video_blocks`), a wznowienie następuje dopiero przy kotwicy `kickoff_2nd` z `games.py`,
+  ~2 minuty później. Jeśli wpiszemy tam `X`, back-fill rozciągnie pierwsze posiadanie wstecz i je
+  zabije. **Trzeba jawnie wpisać `D`**, z granicami liczonymi z tych funkcji, nigdy z literału.
 
 ### 1.1 Symulacja wrażliwości (`research/metric_sensitivity.py`)
 
-Syntetyczne mecze generowane z priorów z literatury (sekcja 5), nie z GT. Każdy wiersz psuje idealną
+Syntetyczne mecze generowane z priorów z literatury, nie z GT: przerwy wg Siegle & Lames (sekcja
+4.3), długości posiadań (`POSS_MEDIAN_S`, `POSS_SIGMA`, przybliżenie z długości sekwencji Opta)
+opisane w nagłówku skryptu. Każdy wiersz psuje idealną
 predykcję w jeden sposób; średnia z 6 meczów (~525 posiadań, ~119 przerw na mecz).
 
 | uszkodzenie | spellF1 |
@@ -99,9 +106,9 @@ To jest dokładnie format znany z feedów TRACAB/DFL/Metrica: per klatka `ball_s
 oraz `ball_owning_team ∈ {home, away}` (Khaustov & Mozgovoy 2020; Bassek i in. 2025; PFF 2022).
 Konsekwencje:
 
-- Flaga właściciela **zmienia się na dotknięciu**, a nie dopiero po „kontrolowanym” posiadaniu —
-  w publicznym GT są posiadania 0,76 s i 1,32 s. Definicja „controlled” w `CHALLENGE.md` jest więc
-  luźniejsza, niż brzmi; repo mówi wprost, że w razie konfliktu rację ma GT.
+- W feedach TRACAB/DFL flaga właściciela zwykle **zmienia się na dotknięciu**, a nie dopiero po
+  „kontrolowanym” posiadaniu. Czy GT tego meczu zachowuje się tak samo, sprawdzamy na danych
+  z innych meczów z tą samą konwencją (IDSSE), nie na publicznych 5 minutach (17 posiadań).
 - Flaga posiadania jest **ciągła podczas gry** (zawsze `H` albo `A`), więc w lotach piłki i
   zamieszaniu trwa ostatnia drużyna — tak jak modeluje to IDSSE/PFF.
 - Przejście `alive → dead` ustawia operator/system w momencie przerwania (piłka za linią, gwizdek),
@@ -224,7 +231,9 @@ podać źródło, kto etykietował i ile.
 ### 5.1 Jak zamknąć lukę domenową
 
 Dane zewnętrzne są czyste. Nasze ATD nie. Przed treningiem/walidacją przepuszczamy dane zewnętrzne
-przez **symulator szumu ATD** skalibrowany na *nieetykietowanych* statystykach naszego meczu:
+przez **symulator szumu ATD**. Dopóki w `docs/DECISIONS.md` nie ma decyzji o kalibracji na
+*nieetykietowanych* statystykach naszego meczu (szara strefa, `COMPETITORS.md` §6.2), zakresy
+szumu bierzemy z SkillCorner i szerokich przedziałów, bez dopasowania do tego meczu:
 
 - usuwanie piłki w seriach o rozkładzie długości jak w naszym ATD, z wyższym prawdopodobieństwem
   w tłoku/polu karnym/przy dużej prędkości piłki (lot);
@@ -260,8 +269,9 @@ Kolejność budowy (każdy krok mierzony na zewnętrznych meczach z oficjalną m
 2. **v1 — reguły + dekoder**: detektor martwej piłki z geometrii + Smart Tagging; zmiana posiadania
    wg Vidal-Codina (zmiana wektora piłki w strefie zawodnika); HSMM z rozkładami długości z IDSSE.
 3. **v2 — modele uczone**: gradient boosting / mały Set Transformer na cechach per klatka,
-   trenowany na IDSSE (+PFF) z augmentacją szumem; ball-free model do luk; pseudo-etykiety na
-   naszym meczu (self-training) z klatek o wysokiej pewności.
+   trenowany na IDSSE (+PFF) z augmentacją szumem; ball-free model do luk. Self-training
+   (pseudo-etykiety na naszym meczu) tylko jeśli zespół zapisze zgodę w `docs/DECISIONS.md`
+   (szara strefa, `COMPETITORS.md` §5 i §6.7).
 4. **v3 — dodatkowe modalności** (jeśli czas pozwoli): gwizdek z audio, detektor piłki z wideo.
 
 ---
@@ -289,7 +299,8 @@ Kolejność budowy (każdy krok mierzony na zewnętrznych meczach z oficjalną m
 - [ ] Nie wysyłamy danych/wideo meczu do hostowanych LLM-ów.
 - [ ] `data/` w `.gitignore`; nie publikujemy pochodnych odtwarzających dane.
 - [ ] Repo regeneruje identyczny plik; dokument opisuje dane zewnętrzne (źródło, kto, ile).
-- [ ] Pseudo-etykiety tylko algorytmiczne (żadna osoba nie decyduje o żadnej etykiecie).
+- [ ] Pseudo-etykiety ani kalibracja na naszym meczu bez decyzji w `docs/DECISIONS.md`; jeśli
+      zgoda zapadnie: tylko algorytmiczne (żadna osoba nie decyduje o żadnej etykiecie).
 
 ---
 

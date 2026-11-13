@@ -12,6 +12,11 @@ Zastrzeżenia, które trzeba mieć w głowie przy każdej liczbie poniżej:
 - Okno publiczne ma **17 posiadań** — bootstrap CI typowo [0.39, 0.75]. Korelacja publiczne↔zewnętrzne
   jest słaba (np. AndaAnda: bench 0.776, publiczne 0.480; SAM-Analytics: 0.741 vs 0.764).
 - Wszystko poniżej to deklaracje z README/dokumentów; nic nie było przez nas uruchamiane.
+- Zliczenia repo (161, 141, 63, 55…) pochodzą z regexu po notatkach; skrypt i surowy wynik nie są
+  w repo, więc liczby są **wyłącznie orientacyjne**. Tabeli wyników nie używać do rankingu.
+- Żadna liczba o meczu BAR-ATH z tego dokumentu (dead-rate, granice połówek, progi) **nie jest
+  priorem ani celem**: część zespołów stroiła na publicznym GT (§5), więc ich liczby niosą je
+  pośrednio (AGENTS §2 reguła 2). Priory tylko z literatury piłkarskiej lub innych meczów.
 
 ## TL;DR
 
@@ -143,7 +148,7 @@ Ten etap okazał się ważniejszy niż wybór modelu. Powtarzające się technik
 | Zespół (repo) | Model | Dane zewn. | Bench zewn. spellF1 | Publiczne 5 min |
 |---|---|---|---|---|
 | Barca-Hackathon (`Barca-Hackathon/more-than-a-hack-2027`) | dead-ball HMM + 8× temporal CNN ensemble + Viterbi z min. czasem D | Metrica, DFL, SkillCorner | **0.853** held-out | — |
-| CoreOrigin (`7dracoder`) | HGB + CNN-BiGRU-TCN, 780 cech, residual TCN | DFL, Metrica, SkillCorner | 0.857 (1 mecz dev), 0.732 test | 0.446 (flaga: wcześniejszy refit na public) |
+| CoreOrigin (`7dracoder`) | HGB + CNN-BiGRU-TCN, 780 cech, residual TCN | DFL, Metrica, SkillCorner | 0.857 (1 mecz dev), 0.732 test | 0.446 |
 | Team Sigue (`MarkMolnar232926`) | bi-GRU ×3 seed × 4 widoki, boundary-weighted CE, Viterbi 16/24 | DFL, SkillCorner, Metrica | DFL 0.741 / SC 0.747 / Metrica 0.855 | 0.662 |
 | TercerHombre (`TEKAB2`) | GBDT + multi-seed MS-TCN, touch peaks, Viterbi | DFL, Metrica | 0.775 (LOO 10 meczów) | — |
 | AndaAnda (`JulienErbland`) | LightGBM + TCN, średnia geometryczna 4 modeli, Viterbi 40 | DFL, Metrica; PFF tylko eval | 0.776 LOMO; PFF 0.529 | 0.480 |
@@ -160,12 +165,12 @@ Ten etap okazał się ważniejszy niż wybór modelu. Powtarzające się technik
 | ZesterJ | LightGBM 78 cech + min-duration 3 s | DFL | 0.688 LOMO | ~0.57 |
 | AOM (`ra189zor`) | XGBoost + TCN 85k, Viterbi 40/8 | DFL; Metrica eval | clean 0.675 / moderate 0.555 | — |
 | Fable (`jekkiechan`) | 204 cechy → bi-GRU H/A + player-only GRU D, Viterbi 3 | DFL, Metrica, SkillCorner, **SoccerNet-GAR** 45 | 0.647 clean / 0.506 stress | 0.630 |
-| Frame Control (`danieltyukov`) | 3× LightGBM + broadcast shot-type, 4-stan Viterbi | DFL | 0.610 | 0.650 (flaga: wagi broadcast na public) |
+| Frame Control (`danieltyukov`) | 3× LightGBM + broadcast shot-type, 4-stan Viterbi | DFL | 0.610 | 0.650 |
 | Raumdeuters (`stefrazv`) | **PathCRF** H/A + HGB dead + ball-vote | DFL | ~0.604 degraded | — |
 | COOKED (`akss06`) | 2× LightGBM (MA vs SG ball) + Viterbi | DFL, Metrica | 0.601 (worst 0.540) | tylko check |
 
-Najwyższe **publiczne** wyniki zgodne z regułami: SAM-Analytics 0.764, Team Sigue 0.662,
-Frame Control 0.650 (flaga), Fable 0.630, Letinsh 0.612, Camgomocod 0.594.
+Deklarowane wyniki na oknie publicznym (17 posiadań) to szum i nie mówią nic o zgodności z regułami;
+nie rankujemy po nich.
 
 ---
 
@@ -183,7 +188,9 @@ Co zespoły zgodnie raportują jako działające:
   ponad dobrze dobrane koszty + minimalny czas trwania.
 - **Snap granic** do wykrytych dotknięć / wyjść piłki (Agamemnon, DSBA, Barca4Ever ±3 klatki,
   FC Medallo boundary detector +1.2 pp).
-- **Kick-off 2. połowy** (113742) i okno 110808–113741 jako twarde D — wszyscy.
+- **Okno przed kick-offem 2. połowy jako twarde D** — powszechne. Cudze numery klatek nie są do
+  kopiowania: u nas początek połowy i wznowienie wynikają wyłącznie z `valid_runs` i kotwicy
+  `kickoff_2nd` w `games.py`, nigdy z literału (AGENTS §2 reguła 1).
 - **Multi-provider**: trening na DFL + SkillCorner + Metrica uśrednia "quirki" dead-ball każdego providera
   (Anfield, Sigue, SAM). Ocena na providerze niewidzianym w treningu (Fable, Kora).
 
@@ -198,22 +205,24 @@ Co raportują jako niedziałające lub marginalne:
 - **Self-training na własnym dekodzie** (DSBA: szkodzi), **PathCRF w ensemble** (Anfield: odrzucony),
   **joint fusion dead+team** (AOM: psuje dead).
 - **Pełny 5-stanowy HSMM** vs Viterbi: Pompeu hsmm_v1 0.449 < rules 0.506 publicznie.
-- Częsty błąd: **za dużo D** (NoTime 30.8%, Blaze2fire 48.7%) albo **za mało** (ZesterJ ~7% vs ~20% GT).
-  Kalibracja dead-rate to osobny problem.
+- Częsty błąd: zespoły raportują wyraźnie za dużo albo za mało D. Udział D to osobny problem;
+  oczekiwany poziom bierzemy z literatury (np. Siegle & Lames 2012) i innych meczów, nie z liczb
+  innych zespołów o BAR-ATH.
 
 ---
 
 ## 5. Flagi zgodności z regułami (z dokumentacji samych zespołów)
 
-Nie oceniamy, tylko notujemy, co zespoły same ujawniają. To ważne jako lista rzeczy, których mamy unikać.
+Nie oceniamy innych zespołów i nie wymieniamy ich tutaj (to wnioski z README, niezweryfikowane).
+Notujemy tylko kategorie ryzyka, których mamy unikać:
 
-| Kategoria | Repo |
+| Kategoria ryzyka | Ile repo (orientacyjnie) |
 |---|---|
-| Trening/strojenie na **publicznym GT** | Derekko-web/mtah2027-possession (archiwum, spellF1 1.000), debjyotydasgupta-collab (Optuna na GT, 0.9375), sirozhiddinovv, Cochinae (dead LR na GT), andan20, INVICTA (próg 1.3 m/s), Team Nexus (waga dead), Remontada (próg 50), Team Sigue (log eksperymentów na public), StartUP |
-| Wagi/progi dobrane na oknie publicznym przy innym modelu | Frame Control (4 wagi broadcast), Rei JR (2 m gate), Merah Putih |
-| Ręczne etykiety na meczu BAR-ATH (dozwolone do walidacji, ryzyko strojenia) | TrymBardsen (10 min), ZainnB (15 min), akarayaz, Yamal Fan Boys (z wideo); SyntaxEror i P-Value usunęli |
-| Fit nienadzorowany / pseudo-etykiety na meczu konkursowym | varunb1996, avi1967 (bisekcja do 15 s średniej), TIMutuma, Inka, TikiTaka Labs, MarioW333, anisabdali, Yamal Fan Boys (Baum–Welch EM) |
-| Udostępnienie statystyk hosted LLM | Dog Lovers, VISCA BARCA (tylko agregaty, ujawnione) |
+| Trening/strojenie na **publicznym GT** | ~10 |
+| Wagi/progi dobrane na oknie publicznym przy innym modelu | ~3 |
+| Ręczne etykiety na meczu BAR-ATH (u nas zakazane w każdej ilości) | ~5 |
+| Fit nienadzorowany / pseudo-etykiety / EM na meczu konkursowym | ~8 |
+| Udostępnienie statystyk meczu hostowanemu LLM | ~2 |
 
 ---
 
@@ -224,8 +233,10 @@ Nie oceniamy, tylko notujemy, co zespoły same ujawniają. To ważne jako lista 
    nikt nie pokazał, że trening na nim pomaga. SoccerNet-GAR to jedyna droga do dziesiątek meczów
    więcej (Fable), ale ze "srebrnymi" etykietami.
 2. **Symulator ATD** (nasz pomysł z `RESEARCH.md`) jest potwierdzony przez czołówkę jako kluczowy.
-   Kalibrować go wyłącznie z nieetykietowanych statystyk BAR-ATH (rozkład luk, 46 slotów, jitter),
-   z domain randomisation.
+   Kalibracja z nieetykietowanych statystyk BAR-ATH (rozkład luk, 46 slotów, jitter) to **szara
+   strefa** względem pkt 7 i §5: **do decyzji zespołu** (ew. pytanie do organizatorów), zapisanej
+   w docs/DECISIONS.md przed implementacją. Do tego czasu: domain randomisation z SkillCorner
+   i szerokich zakresów, bez dopasowania do tego meczu.
 3. **Model**: GBDT na cechach bez ID jako szybka baza (cel ~0.6 na degradowanym DFL), potem
    temporalna sieć (TCN / bi-GRU, kontekst ±5–10 s) w ensemble z GBDT. Dwa wyjścia: P(dead), P(home | alive)
    + opcjonalnie P(change) do kosztów przełączeń.

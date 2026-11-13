@@ -1,0 +1,34 @@
+# Installed by `make setup`. Runs on every commit, whoever (or whatever agent) makes it.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types: [python]
+        exclude: ^(evaluation|starter)/|^games\.py$
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+        exclude: ^(evaluation|starter)/|^games\.py$
+      - id: nbstripout
+        name: strip notebook outputs (derived data must not be published)
+        entry: uv run nbstripout
+        language: system
+        files: \.ipynb$
+        exclude: ^starter/  # organiser notebooks ship without outputs; check_repo.py verifies
+      - id: check-repo
+        name: protected files intact, nothing private tracked
+        entry: python3 scripts/check_repo.py
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: pytest
+        name: tests
+        entry: uv run pytest -q -x
+        language: system
+        pass_filenames: false
+        types: [python]
