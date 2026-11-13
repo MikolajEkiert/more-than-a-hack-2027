@@ -1,0 +1,21 @@
+# Example of fusion at the evidence level (docs/FUSION.md): two sources of team evidence combined
+# as a weighted sum of log-odds, one decoder. Here both sources are ours; a supervised model takes
+# the place of the second one, as a registered method or as {file = "path/{game}.npz"}.
+# Scored like any config: possession validate configs/blend_team_example.toml --against configs/unsup_v2.toml
+name = "blend_team_example"
+
+[ball_state]
+method = "stoppage_evidence"
+
+[team]
+method = "blend"
+sources = ["touch_episodes", { method = "control_evidence", passing_by_weight = 0.0 }]
+weights = [1.0, 0.5]
+
+[decode]
+method = "switch_cost"
+turnover_cost = 5.0
+stop_cost = 12.0
+restart_cost = 12.0
+snap_start_s = 3.0
+snap_end_s = 3.0
