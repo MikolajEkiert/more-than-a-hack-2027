@@ -103,7 +103,10 @@ look wrong), `/review-pr N`, `/report`, `/submit`.
   append to its log as you go. That file is how the next agent session picks up the context.
 - `No module named 'possession'` on macOS means the repo sits in an iCloud-synced folder, which
   hides `.venv/*.pth`; tell the human (docs/TEAM_SETUP.md). Do not patch the venv.
-- Small PRs to `main`; CI must be green; another teammate (or `/review-pr`) reviews. `git pull
+- Small PRs to `main`; `make check` must be green; another teammate (or `/review-pr`) reviews. On one
+  machine a job reviews every PR, pushes fixes for its findings to the PR branch and merges it once
+  the review is clean and `make check` passes on main + PR (docs/TEAM_SETUP.md). Label a PR
+  `no-auto` to keep it manual; pull before you continue on a branch the job may have fixed. `git pull
   --rebase` often. Never push to `main` directly or force-push.
 - Every run that changes labels: `make run ... NOTE=...` writes `experiments/runs/*.json`. Commit
   it with the code that produced it. Do not re-try ideas that the log shows already failed.

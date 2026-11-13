@@ -56,10 +56,10 @@ guard-off:  ## data guard OFF (sample data only)
 	python3 -c "import json,pathlib;p=pathlib.Path('scripts/agent_guard.json');d=json.loads(p.read_text());d['enabled']=False;d['currently']='sample data: guard off';p.write_text(json.dumps(d,indent=2)+'\n')"
 	rm -f .cursorignore
 
-review-watch-install:  ## local AI review of new PRs every 5 min (ONE machine only; macOS launchd)
+review-watch-install:  ## local AI review, auto-fix and auto-merge of PRs every 5 min (ONE machine only; macOS launchd)
 	scripts/review_watch_launchd.sh install
 
-review-watch-uninstall:  ## stop the local PR reviewer
+review-watch-uninstall:  ## stop the local PR reviewer / fixer / merger
 	scripts/review_watch_launchd.sh uninstall
 
 review-watch-status:  ## is the local PR reviewer running; last log lines

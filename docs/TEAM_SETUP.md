@@ -33,15 +33,35 @@ them). Invoke the same workflows (`/do-task NN`, ...).
 ## Daily loop
 1. Pick a task in `tasks/` (or `/plan-task` a new one). Branch `task/NN-slug`.
 2. Agent works via `/do-task NN`, and `make check` must be green.
-3. PR → CI green → a teammate runs `/review-pr <n>` → merge.
+3. PR → the review job (below) reviews, fixes and merges it; or a teammate runs `/review-pr <n>` and
+   merges. `git pull` your branch before pushing again: the job may have added a fix commit.
 4. `git pull --rebase` on main before starting the next task.
 
-## Automatic AI review of PRs (one machine)
-`make review-watch-install` runs `scripts/pr_review_watch.sh` every 5 minutes via launchd. It
-reviews each new head commit of an open, non-draft PR by a repo collaborator with Claude Code
-(Sonnet 5.5, effort high, read-only tools) following `/review-pr`, and posts one comment from the
-`gh` account of that machine. Test without posting: `DRY_RUN=1 ONLY_PR=<n> scripts/pr_review_watch.sh`.
-State and worktree are in `~/Library/Application Support/mtah-pr-review/`, the log is in
+## Automatic AI review, fix and merge of PRs (one machine)
+`make review-watch-install` runs `scripts/pr_review_watch.sh` every 5 minutes via launchd, from its
+own clone. For each open, non-draft PR by a repo collaborator it does one step per head commit:
+
+1. **Review** (Sonnet 5.5, effort high, read-only tools) following `/review-pr`; one comment from
+   the `gh` account of that machine, starting with `Verdict: looks good | needs changes | blocking`.
+2. **Fix**, if the verdict is not "looks good": a second session (Opus 5.5) edits a checkout of the
+   PR branch. The script then runs `make check`, commits and pushes to the branch (never a
+   force-push), and comments what was fixed, what was left and what needs a human. The new commit is
+   reviewed on the next run. At most 3 fix rounds per PR.
+3. **Merge**, if the verdict is "looks good": the script merges the PR into a scratch checkout of
+   main, runs `make check` there, and only then merges on GitHub (a merge commit).
+
+Controls:
+- Label a PR **`no-auto`**, or keep it a draft, and it is not fixed or merged.
+- `PR_REVIEW_AUTOFIX=0` gives review only. `PR_MERGE_METHOD=squash` changes the merge method.
+- Test without posting, pushing or merging: `DRY_RUN=1 ONLY_PR=<n> scripts/pr_review_watch.sh`.
+- Re-run `make review-watch-install` after changing the script or `AGENTS.md`: the job uses copies.
+
+What to know: the fix step runs the PR's code (`make check`) on that machine, so it only handles
+collaborators' branches in this repository, in a clone without the match data. Nobody approves a
+merge; the gate is the reviewer's verdict plus `make check`. GitHub Actions is not part of the
+gate (see `scripts/review_known_issues.md`).
+
+State and worktrees are in `~/Library/Application Support/mtah-pr-review/`, the log is in
 `~/Library/Logs/mtah-pr-review/`. Stop it with `make review-watch-uninstall`. The laptop must be
 awake and logged in.
 

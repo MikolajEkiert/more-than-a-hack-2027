@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Install / remove the launchd job that runs scripts/pr_review_watch.sh every few minutes.
+# Install / remove the launchd job that runs scripts/pr_review_watch.sh every few minutes
+# (review, then automatic fix or merge of each PR).
 #   scripts/review_watch_launchd.sh install [interval_seconds]   (default 300)
 #   scripts/review_watch_launchd.sh uninstall
 #   scripts/review_watch_launchd.sh status
-# Run it on ONE machine only, or every PR gets one review per teammate.
+# Run it on ONE machine only, or every PR gets one review (and competing fix pushes) per teammate.
 set -euo pipefail
 LABEL="com.mtah.pr-review"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
