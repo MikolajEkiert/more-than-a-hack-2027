@@ -38,3 +38,8 @@ window starts 2,934 frames of D before the kickoff.
   0.906 for `ball_visible`, as part of `unsup_control`. On the match: D share 44.8%, 358
   possessions. Parameters are in seconds, metres and m/s; no frame constants. Not done: fitting
   the cue parameters on the match (EM), the kick-off rule before the second half.
+- 2026-11-14 · MikolajEkiert/Claude · Kick-off rule added to `stoppage_evidence` (`features.kickoffs`,
+  formation only). External matches: every kick-off event found, kick time +0.3 s. Our match:
+  second-half kick-off 0.2 s from the published anchor; the graded wait before it is now 100% D
+  (was 63%). A moving tracked ball inside the pitch now counts as evidence of play. Stoppage edges are snapped to the ball gap in the decoder (task 05). Not done:
+  fitting the cue parameters on the match (a plain hard EM hurt on the external match).

@@ -1,0 +1,45 @@
+{
+  "author": "MikolajEkiert",
+  "config": {
+    "ball_state": {
+      "method": "stoppage_evidence"
+    },
+    "decode": {
+      "method": "switch_cost"
+    },
+    "game": null,
+    "name": "unsup_control",
+    "team": {
+      "method": "control_evidence"
+    }
+  },
+  "config_path": "configs/unsup_control.toml",
+  "csv_sha256": "0d121a8021eb91b84277676c1ec665b53ea7956ad3c0fe89c8d14b2e89c9e382",
+  "diagnostics": {
+    "fps": 25,
+    "home_share": 0.6333,
+    "label_share_graded": {
+      "A": 0.2063,
+      "D": 0.4373,
+      "H": 0.3564,
+      "X": 0.0
+    },
+    "mean_possession_s": 9.99,
+    "n_frames": 199319,
+    "n_possessions": 358
+  },
+  "git_branch": "task/05-decoder-edges-touch-episodes",
+  "git_commit": "a5e9d87",
+  "git_dirty": true,
+  "name": "unsup_control",
+  "note": "control version after the shared changes (tie rule, kick-off, moving ball)",
+  "public_sanity": {
+    "macroF1": 0.759,
+    "n_gt_possessions": 17,
+    "n_pred_possessions": 19,
+    "note": "public 5 min, 17 possessions: sanity only, never for choosing between versions",
+    "spellF1": 0.4111
+  },
+  "seconds": 3.8,
+  "time_utc": "2026-11-13T23:14:59Z"
+}

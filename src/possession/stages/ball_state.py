@@ -37,6 +37,11 @@ def stoppage_evidence(
     still_m: float = 0.5,
     still_window_s: float = 1.0,
     still_llr: float = -1.5,
+    moving_m_s: float = 4.0,
+    moving_llr: float = 2.0,
+    kickoff_llr: float = -8.0,
+    kickoff_wait_s: float = 300.0,
+    kickoff_wait_speed_m_s: float = 2.5,
 ) -> np.ndarray:
     """Per-frame evidence that play is live, from ball visibility, players' speed and ball place.
 
@@ -49,6 +54,12 @@ def stoppage_evidence(
       * the ball is tracked beyond the pitch boundary by `outside_margin_m`: Law 9
       * the ball is tracked but has moved less than `still_m` in `still_window_s`: placed for a
         restart
+      * the ball is tracked inside the pitch and moving at `moving_m_s` or more: in play (after a
+        stoppage the ball is usually tracked again only once it has been played)
+      * a kick-off set-up (`features.kickoffs`: each team in its own half): dead until the kick.
+        At the start of a half, the wait before the first set-up is dead too, if that set-up
+        begins within `kickoff_wait_s` and the players were not running before it
+        (`kickoff_wait_speed_m_s`); a half whose data starts at the kick-off has no such wait
     Defaults are football priors and round numbers, not fitted to any labelled data.
     """
     n, fps = match.n_frames, match.fps
@@ -87,5 +98,26 @@ def stoppage_evidence(
     moved[lag:] = np.hypot(xy[lag:, 0] - xy[:-lag, 0], xy[lag:, 1] - xy[:-lag, 1])
     with np.errstate(invalid="ignore"):
         llr = llr + np.where(moved < still_m, still_llr, 0.0)
+
+    ball_speed = features.ball_kinematics(match)["speed"]
+    with np.errstate(invalid="ignore"):
+        llr = llr + np.where(seen & (ball_speed >= moving_m_s) & (edge >= 0), moving_llr, 0.0)
+
+    if kickoff_llr:
+        setups = features.kickoffs(match)
+        waiting = np.zeros(n, dtype=bool)
+        for start, kick in zip(setups["start"].tolist(), setups["kick"].tolist(), strict=True):
+            waiting[start:kick] = True
+        for number in (1, 2):
+            in_half = np.flatnonzero(match.half == number)
+            first = setups["start"][match.half[setups["start"]] == number][:1]
+            if not len(in_half) or not len(first):
+                continue
+            begin, start = int(in_half[0]), int(first[0])
+            before = speed[begin:start]
+            if 0 < start - begin <= kickoff_wait_s * fps and not np.isnan(before).all():
+                if np.nanmedian(before) < kickoff_wait_speed_m_s:
+                    waiting[begin:start] = True
+        llr = llr + np.where(waiting, kickoff_llr, 0.0)
 
     return (1.0 / (1.0 + np.exp(-np.clip(llr, -30, 30)))).astype(np.float32)

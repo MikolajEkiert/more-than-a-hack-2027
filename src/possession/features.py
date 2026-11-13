@@ -243,3 +243,106 @@ def nearest_by_team(match: Match) -> dict:
         return {"distance": distance, "slot": slot}
 
     return _memo(match, "nearest_by_team", compute)
+
+
+def kickoffs(
+    match: Match,
+    tolerance_m: float = 3.0,
+    share: float = 0.9,
+    min_players: int = 7,
+    min_s: float = 1.0,
+    merge_gap_s: float = 15.0,
+    centre_m: float = 1.5,
+    leave_m: float = 2.0,
+    lag_s: float = 1.8,
+) -> dict:
+    """Kick-off set-ups: stretches where each team stands in its own half, and when the kick came.
+
+    A set-up is a run of at least `min_s` in which at least `share` of each team's tracked players
+    (at least `min_players` of them) are on their own side of the halfway line, within
+    `tolerance_m`. Which side is a team's own is read per half from where its players are on
+    average. Runs closer than `merge_gap_s` are one wait (a retaken kick-off, a player stepping
+    over the line and back).
+
+    Keys (arrays of equal length, one entry per set-up): `start`, `stop` (video frames, stop
+    exclusive) and `kick`, the frame play restarts: the first frame the tracked ball is more than
+    `leave_m` from the centre mark after having been within `centre_m` of it, or, when the ball
+    was not seen on the mark, `lag_s` before the set-up ends (players need that long to cross
+    the line; measured on the external matches' kick-off events).
+    """
+
+    def compute():
+        n, fps = match.n_frames, match.fps
+        length, width = match.pitch
+        x = match.players[:, :, 0]
+        tracked = ~np.isnan(x)
+        setup = np.zeros(n, dtype=bool)
+        for number in (1, 2):
+            in_half = match.half == number
+            if not in_half.any():
+                continue
+            with np.errstate(all="ignore"):
+                centre_of = [
+                    np.nanmedian(x[in_half][:, match.team_of_track == team]) for team in (0, 1)
+                ]
+            if np.isnan(centre_of).any():
+                continue
+            low_side = 0 if centre_of[0] < centre_of[1] else 1
+            ok = in_half.copy()
+            for team in (0, 1):
+                mine = match.team_of_track == team
+                count = tracked[:, mine].sum(axis=1)
+                with np.errstate(invalid="ignore"):
+                    if team == low_side:
+                        own = x[:, mine] <= length / 2 + tolerance_m
+                    else:
+                        own = x[:, mine] >= length / 2 - tolerance_m
+                inside = (own & tracked[:, mine]).sum(axis=1)
+                ok &= (count >= min_players) & (inside >= share * count)
+            setup |= ok
+
+        starts, stops = runs(setup)
+        keep = (stops - starts) >= min_s * fps
+        starts, stops = starts[keep], stops[keep]
+        merged: list[list[int]] = []
+        for start, stop in zip(starts.tolist(), stops.tolist(), strict=True):
+            same_wait = (
+                merged
+                and start - merged[-1][1] <= merge_gap_s * fps
+                and match.half[start] == match.half[merged[-1][0]]
+            )
+            if same_wait:
+                merged[-1][1] = stop
+            else:
+                merged.append([start, stop])
+
+        to_centre = np.hypot(match.ball[:, 0] - length / 2, match.ball[:, 1] - width / 2)
+        kicks = []
+        for start, stop in merged:
+            kick = max(stop - int(round(lag_s * fps)), start)
+            with np.errstate(invalid="ignore"):
+                on_mark = np.flatnonzero(to_centre[start:stop] <= centre_m)
+                if len(on_mark):
+                    after = on_mark[-1] + 1
+                    left = np.flatnonzero(to_centre[start + after : stop] > leave_m)
+                    if len(left):
+                        kick = start + after + int(left[0])
+            kicks.append(kick)
+        return {
+            "start": np.array([m[0] for m in merged], dtype=np.int64),
+            "stop": np.array([m[1] for m in merged], dtype=np.int64),
+            "kick": np.array(kicks, dtype=np.int64),
+        }
+
+    key = (
+        "kickoffs",
+        tolerance_m,
+        share,
+        min_players,
+        min_s,
+        merge_gap_s,
+        centre_m,
+        leave_m,
+        lag_s,
+    )
+    return _memo(match, key, compute)
