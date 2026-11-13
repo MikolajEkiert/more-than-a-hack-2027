@@ -36,11 +36,19 @@ MAX_FAILURES=2
 
 mkdir -p "$STATE_DIR"
 touch "$REVIEWED" "$FAILED"
-# A lock older than 30 minutes is left over from a killed run.
-if [ -d "$LOCK" ] && [ -n "$(find "$LOCK" -maxdepth 0 -mmin +30 2>/dev/null)" ]; then rmdir "$LOCK"; fi
-mkdir "$LOCK" 2>/dev/null || { echo "another review run is in progress"; exit 0; }
+# One run at a time. The lock holds the owner's PID; a lock whose owner is gone (killed run,
+# e.g. by a re-install) is taken over instead of blocking every later run.
+if ! mkdir "$LOCK" 2>/dev/null; then
+  OWNER="$(cat "$LOCK/pid" 2>/dev/null || true)"
+  if [ -n "$OWNER" ] && kill -0 "$OWNER" 2>/dev/null; then
+    echo "another review run is in progress (pid $OWNER)"; exit 0
+  fi
+  echo "taking over a stale lock (pid ${OWNER:-unknown} is gone)"
+fi
+echo $$ > "$LOCK/pid"
 ERR="$(mktemp)"
-trap 'rmdir "$LOCK"; rm -f "$ERR"' EXIT
+trap 'rm -rf "$LOCK" "$ERR"' EXIT
+trap 'exit 143' TERM INT
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*"; }
 
