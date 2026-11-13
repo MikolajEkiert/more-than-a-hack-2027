@@ -1,0 +1,5 @@
+{
+  "enabled": false,
+  "why": "FAQ.md / Terms: the official dataset and any extracts of it may not be given to a cloud-hosted LLM. Turn on with `make guard-on` as soon as the official data is in data/.",
+  "currently": "working on a public sample dataset; guard off"
+}
