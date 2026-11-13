@@ -140,3 +140,15 @@ def test_table_shows_the_external_score_only_where_there_is_one():
     assert "ext spF1" in lines[0]
     assert "0.1234" in lines[2]
     assert "0.1234" not in lines[3]
+
+
+def test_table_marks_clean_and_degraded_external_scores():
+    from possession import experiments
+
+    entries = [
+        {"name": "a", "external": {"spellF1": 0.1234, "condition": "clean"}},
+        {"name": "b", "external": {"spellF1": 0.4321, "condition": "degraded(seed=0)"}},
+    ]
+    lines = experiments.table(entries).splitlines()
+    assert "0.1234c" in lines[2]
+    assert "0.4321d" in lines[3]

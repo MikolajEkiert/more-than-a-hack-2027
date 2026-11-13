@@ -81,13 +81,22 @@ def table(entries: list[dict]) -> str:
         s = e.get("public_sanity") or {}
         x = e.get("external") or {}
         commit = (e.get("git_commit") or "") + ("+" if e.get("git_dirty") else "")
+        ext = f"{x.get('spellF1', '')}{_condition_mark(x.get('condition'))}" if x else ""
         lines.append(
             f"{e.get('time_utc', ''):<20} {e.get('author', '')[:12]:<12} "
             f"{e.get('name', '')[:28]:<28} {d.get('n_possessions', ''):>5} "
             f"{d.get('mean_possession_s', ''):>6} {s.get('spellF1', ''):>9} "
-            f"{x.get('spellF1', ''):>8} {commit:<8} "
+            f"{ext:>8} {commit:<8} "
             f"{e.get('note', '')}"
         )
     lines.append("* public 5-minute window: sanity check only, not a ranking (EVALUATION.md)")
     lines.append("  ext spF1: another, labelled match (possession validate); ranks versions")
+    lines.append("  suffix c = clean tracking, d = degraded; compare only like with like")
     return "\n".join(lines)
+
+
+def _condition_mark(condition: str | None) -> str:
+    """Return a one-letter marker for a validation condition (c clean, d degraded)."""
+    if not condition:
+        return ""
+    return "c" if condition == "clean" else "d" if condition.startswith("degraded") else "?"
