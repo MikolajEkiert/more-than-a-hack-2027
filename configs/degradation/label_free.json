@@ -1,0 +1,14 @@
+{
+  "name": "label_free",
+  "params": {
+    "ball_offset_m": 0.5,
+    "ball_smooth_s": 0.6,
+    "free_gap_s": [5.0, 20.0],
+    "lead_in_s": [2.0, 8.0],
+    "lost_ball_share": 0.15,
+    "players_visible": 20.5,
+    "visible_dead_prob": 0.5,
+    "visible_dead_s": [0.5, 3.0]
+  },
+  "source": "Set by hand so that label-free aggregates of the degraded external tracking match the competition tracking (possession inspect gaps): share of frames with a ball, number and share of long ball gaps, players visible, how fast the ball's velocity changes, ball-to-player distance and relative speed. Uses no labels and no published scores."
+}

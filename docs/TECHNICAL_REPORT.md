@@ -21,7 +21,7 @@ The public 5-minute window was used only to check the pipeline is correct._
 
 | dataset | source and licence | labels: who and how | amount | used for |
 |---|---|---|---|---|
-| Metrica Sports sample data, Sample Game 3 | https://github.com/metrica-sports/sample-data (public; no licence file, the README asks for credit; downloaded at run time, not redistributed) | Nobody on our side. The provider's corrected tracking and event file, turned into per-frame H/A/D by `src/possession/validation.py`: D where the tracking has no ball position, otherwise the team of the last on-ball event | 1 match, 143,193 graded frames, 386 possessions (mean 10.1 s), 31.9% dead | validation and the choice of hyperparameters only; nothing is trained on it |
+| Metrica Sports sample data, Sample Games 1-3 | https://github.com/metrica-sports/sample-data (public; no licence file, the README asks for credit; downloaded at run time, not redistributed) | Nobody on our side. The provider's corrected tracking and event files, turned into per-frame H/A/D by `src/possession/validation.py`: D where the tracking has no ball position and the events confirm a stoppage, otherwise the team in possession by the events, under two readings (`touch`, `controlled`) that are both scored | 3 matches, 427,071 graded frames; 1,059 possessions under `touch` (mean 10.2 s), 732 under `controlled` (mean 14.8 s); 32-40% dead | validation and the choice of hyperparameters only; nothing is trained on it |
 
 ## 4. Possession rules implemented
 _Loose balls, challenges, deflections, restarts, dead-ball detection, when we abstain (X)._

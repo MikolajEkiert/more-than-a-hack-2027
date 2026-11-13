@@ -51,26 +51,34 @@ Derived quantities shared by several methods live in `features.py` and are memoi
 
 - `scoring.diagnostics`: possession count, mean duration, home share and label shares, all with no GT.
 - `scoring.public_sanity`: the public 5 minutes; a bug detector only.
-- `validation` (`possession validate CONFIG...`): the evidence for choosing between versions,
-  within the limits below.
-  It loads Metrica's public Sample Game 3 (same provider and EPTS format as the competition
-  tracking), derives per-frame H/A/D from it by an algorithm (D where the corrected tracking has
-  no ball; otherwise the team of the last on-ball event), degrades the tracking to resemble ours
-  (the ball lost for long stretches, tracks dropping out, the ball pulled off the possessor) and
-  scores a config with the official metric code, with a bootstrap interval.
-  - The test the full match sets (prefer window 50 to 125) is only partly met. On one degradation
-    seed (0), 50 scores 0.318 [0.292, 0.347], 125 scores 0.297 [0.264, 0.330] and 25 scores 0.272
-    [0.252, 0.292]. So 25 is clearly worse than 50, but 50 versus 125 is not resolved: the
-    intervals overlap and the gap is inside the noise band. The bootstrap resamples possessions,
-    not degradation draws; the spread over several seeds is not measured yet.
-  - The D truth is "no ball in the clean tracking", and `ball_visible` reads that same signal, so
-    part of its alive/dead F1 (about 0.9) is built in. Methods that find stoppages inside ball gaps
-    (e.g. from player speed) are tested only through the degradation assumptions, and player speed
-    inside the degraded gaps is higher than on our data (2.4 against 1.7 m/s).
-  - Limits: one match; degradation is seeded and parameterised, not measured (we cannot know
-    which of our ball gaps are stoppages); corrected tracking pins the ball to the possessor, so
-    the team stage is easier there than on automatic tracking. Use it to rank versions, not to
-    forecast the score. Accept a change only beyond the noise band (spellF1 +/- 0.04).
+- `validation` (`possession validate CONFIG... [--against CONFIG] [--profile NAME]`): the
+  evidence for choosing between versions, within the limits below.
+  - **Matches**: Metrica's public Sample Games 1-3 (same provider as the competition tracking;
+    game 3 in the same EPTS format, games 1-2 in CSV). Downloaded on first use, never committed.
+  - **Labels**, derived by an algorithm: D where the corrected tracking has no ball and the events
+    confirm a stoppage; otherwise the team in possession under two readings, both always scored:
+    `touch` (the team of the last on-ball event: the provider's event definition) and `controlled`
+    (a touch counts only if the team then holds the ball 0.2 s or completes a pass, shot or set
+    piece: CHALLENGE.md's definition). `controlled` gives 4.03-4.09 possessions per live minute
+    and a mean of 14.7-14.9 s on the three matches, against 4.2 and 14.2 s published for the
+    competition's public window; `touch` gives about 6.0 and 10.0-10.5 s. The published
+    full-match baseline scores are reproduced slightly better by `touch`. Which one the ground
+    truth follows is unknown, so a change must not lose under either.
+  - **Degradation**: a named profile in `configs/degradation/` (see its README). `label_free` is
+    set from label-free aggregates of our tracking; `published_baselines` is fitted so that the
+    organiser baselines score what EVALUATION.md publishes for the full match, and is harsher.
+    One degraded match serves both label readings; 3 seeds per match.
+  - **Acceptance rule, fixed in advance** (`validation.compare`, printed by `--against`): mean
+    spellF1 gain of at least 0.02, no loss under either label reading, and a win on at least two
+    of the three matches.
+  - Where it stands: `baseline_smooth50` scores 0.334 under `label_free` and 0.238 under
+    `published_baselines` (0.2433 on the real match). Window 50 beats 125 on the overall mean
+    under `label_free` and under `touch`, as on the full match; under `controlled` 125 is ahead.
+  - Limits: three matches of one provider; the degradation is seeded and parameterised, not
+    measured (we cannot know which of our ball gaps are stoppages); the D truth is "no ball in the
+    clean tracking", which `ball_visible` partly reads back; corrected tracking pins the ball to
+    the possessor, and how far the degradation undoes that is an assumption. Use it to rank
+    versions, not to forecast the score.
 
 ## Reproducibility
 
