@@ -1,0 +1,13 @@
+# The reference baseline with a 25-frame window, to test a validation signal: the full match
+# prefers 50 over 125 (EVALUATION.md); a useful signal should agree.
+name = "vote_smooth25"
+
+[ball_state]
+method = "ball_visible"
+
+[team]
+method = "nearest_player"
+
+[decode]
+method = "majority_vote"
+window = 25

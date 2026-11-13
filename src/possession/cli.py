@@ -6,6 +6,8 @@
     possession inspect {ball,players,gaps,tagging,labels} [--game G] [--csv F] [--json]
                                            aggregate statistics of the data or of a submission
                                            (rates, percentiles, histograms; never rows)
+    possession validate CONFIG... [--game metrica-sg3] [--seed N] [--clean] [--bootstrap N]
+                                           score configs on another, labelled match
     possession submit configs/x.toml --team NAME
                                            final file: run twice, require identical bytes,
                                            validate with the official script, write submission/
@@ -100,6 +102,39 @@ def cmd_run(args) -> int:
     return 0
 
 
+def cmd_validate(args) -> int:
+    """Score configs on another, labelled match (never the competition match)."""
+    from possession import config as config_mod
+    from possession import experiments, pipeline, scoring, validation
+
+    clean, truth = validation.load_external(args.game)
+    match = clean if args.clean else validation.degrade(clean, truth, seed=args.seed)
+    condition = "clean" if args.clean else f"degraded(seed={args.seed})"
+    print(f"{args.game} {condition}: {int(match.graded.sum())} graded frames")
+    for path in args.configs:
+        cfg = config_mod.load(path)
+        started = time.time()
+        labels = pipeline.run(cfg, match).labels
+        seconds = time.time() - started
+        result = validation.score(labels, truth, bootstrap=args.bootstrap)
+        interval = result.get("spellF1_interval")
+        print(
+            f"OK    {cfg.name:28s} spellF1 {result['spellF1']:.4f}"
+            + (f" [{interval[0]:.3f}, {interval[1]:.3f}]" if interval else "")
+            + f"  macroF1 {result['macroF1']:.4f}"
+            f"  possessions {result['n_pred_possessions']} vs {result['n_gt_possessions']}"
+            f"  alive/dead F1 {result['alive_dead_f1']:.3f}"
+            f"  team acc {result['team_acc_both_alive']:.3f}   {seconds:.1f} s"
+        )
+        if not args.no_log:
+            external = {"game": args.game, "condition": condition, **result}
+            diag = scoring.diagnostics(labels, match.half, match.fps)
+            experiments.record(
+                cfg, "", diag, None, seconds, note=args.note or "", external=external
+            )
+    return 0
+
+
 def cmd_log(args) -> int:
     from possession import experiments
 
@@ -157,6 +192,16 @@ def main(argv=None) -> int:
     p.add_argument("--no-log", action="store_true")
     p.add_argument("--rebuild-cache", action="store_true")
     p.set_defaults(fn=cmd_run)
+
+    p = sub.add_parser("validate", help="score configs on another, labelled match")
+    p.add_argument("configs", nargs="+")
+    p.add_argument("--game", default="metrica-sg3")
+    p.add_argument("--seed", type=int, default=0, help="seed of the degradation")
+    p.add_argument("--clean", action="store_true", help="do not degrade the tracking")
+    p.add_argument("--bootstrap", type=int, default=0, help="draws for a spellF1 interval")
+    p.add_argument("--note", default="")
+    p.add_argument("--no-log", action="store_true")
+    p.set_defaults(fn=cmd_validate)
 
     p = sub.add_parser("log", help="show the experiment log")
     p.add_argument("-n", type=int, default=30)
