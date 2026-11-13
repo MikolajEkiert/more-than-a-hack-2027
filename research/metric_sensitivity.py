@@ -1,8 +1,8 @@
 """How much does each kind of mistake cost on spellF1?
 
 Synthetic matches only. The generator's parameters come from published statistics about *other*
-matches (see research/RESEARCH.md, section "Domain priors"), never from the public ground truth,
-so nothing here is tuned on the provided game.
+matches (the constants below; see research/RESEARCH.md, section 4.3), never from the public
+ground truth, so nothing here is tuned on the provided game.
 
 Each experiment takes a perfect synthetic labelling, damages it in exactly one way, and scores the
 damage with the official metric library. Averaged over several random matches.

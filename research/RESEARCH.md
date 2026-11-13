@@ -42,13 +42,15 @@ został z nich wyznaczony.
 - Każde posiadanie waży tyle samo — 0,8-sekundowe tyle co 40-sekundowe.
 - `X` przed liczeniem `spellF1` jest wypełniane **ostatnią** etykietą w połowie (forward-fill), a na
   początku połowy **pierwszą znaną** (back-fill).
-- **Pułapka**: 2. połowa jest oceniana od klatki 110 808, a wznowienie jest dopiero w 113 742.
-  Jeśli wpiszemy tam `X`, back-fill rozciągnie pierwsze posiadanie o ~117 s wstecz i je zabije.
-  **Trzeba jawnie wpisać `D`.**
+- **Pułapka**: 2. połowa jest oceniana od początku swojego bloku (`valid_runs` /
+  `games.half_video_blocks`), a wznowienie następuje dopiero przy kotwicy `kickoff_2nd` z `games.py`,
+  ~2 minuty później. Jeśli wpiszemy tam `X`, back-fill rozciągnie pierwsze posiadanie wstecz i je
+  zabije. **Trzeba jawnie wpisać `D`**, z granicami liczonymi z tych funkcji, nigdy z literału.
 
 ### 1.1 Symulacja wrażliwości (`research/metric_sensitivity.py`)
 
-Syntetyczne mecze generowane z priorów z literatury (sekcja 5), nie z GT. Każdy wiersz psuje idealną
+Syntetyczne mecze generowane z priorów z literatury (sekcja 4.3 oraz stałe opisane w nagłówku
+skryptu), nie z GT. Każdy wiersz psuje idealną
 predykcję w jeden sposób; średnia z 6 meczów (~525 posiadań, ~119 przerw na mecz).
 
 | uszkodzenie | spellF1 |
@@ -99,9 +101,9 @@ To jest dokładnie format znany z feedów TRACAB/DFL/Metrica: per klatka `ball_s
 oraz `ball_owning_team ∈ {home, away}` (Khaustov & Mozgovoy 2020; Bassek i in. 2025; PFF 2022).
 Konsekwencje:
 
-- Flaga właściciela **zmienia się na dotknięciu**, a nie dopiero po „kontrolowanym” posiadaniu —
-  w publicznym GT są posiadania 0,76 s i 1,32 s. Definicja „controlled” w `CHALLENGE.md` jest więc
-  luźniejsza, niż brzmi; repo mówi wprost, że w razie konfliktu rację ma GT.
+- W feedach TRACAB/DFL flaga właściciela zwykle **zmienia się na dotknięciu**, a nie dopiero po
+  „kontrolowanym” posiadaniu. Czy GT tego meczu zachowuje się tak samo, sprawdzamy na danych
+  z innych meczów z tą samą konwencją (IDSSE), nie na publicznych 5 minutach (17 posiadań).
 - Flaga posiadania jest **ciągła podczas gry** (zawsze `H` albo `A`), więc w lotach piłki i
   zamieszaniu trwa ostatnia drużyna — tak jak modeluje to IDSSE/PFF.
 - Przejście `alive → dead` ustawia operator/system w momencie przerwania (piłka za linią, gwizdek),
