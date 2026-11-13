@@ -35,7 +35,14 @@ from which possession labels are derived by an algorithm.
 - 2026-11-13 · MikolajEkiert/Claude · `src/possession/validation.py` + `possession validate` /
   `make validate`. External match: Metrica Sample Game 3 (386 possessions, mean 10.1 s, 31.9% dead).
   Degraded (seed 0): baseline window 25 / 50 / 125 = spellF1 0.272 / 0.318 / 0.297, intervals
-  [0.252, 0.292] / [0.292, 0.347] / [0.264, 0.330]. Clean: 0.361 / 0.407 / 0.325. Both prefer 50,
-  as the full match does, so the signal is usable; 50 vs 125 is inside the noise band on its own.
-  Not measured: how well the degradation matches the real tracker beyond the aggregates listed in
-  DECISIONS. Next: every method PR reports `make validate` against `baseline_smooth50`.
+  [0.252, 0.292] / [0.292, 0.347] / [0.264, 0.330]. Same order as the full match, but only 25 < 50
+  is established; 50 vs 125 is inside the noise band and not resolved. (`--clean` runs were not
+  logged, so their figures are not quoted here.)
+  Not measured: the spread over degradation seeds; how well the degradation matches the real
+  tracker beyond the aggregates listed in DECISIONS. Next: every method PR reports `make validate`
+  against `baseline_smooth50`.
+- 2026-11-13 · review fixes · Scope deviations: besides the "May touch" list this PR also changes
+  `cli.py` (new `validate` command), `experiments.py` (`external` field and table column), the
+  Makefile (`make validate`), `AGENTS.md` and two configs (`vote_smooth25/125`). The interface
+  line asked for the evidence in `possession run`; it is a separate `possession validate` command
+  instead, so the competition run never needs the external download.

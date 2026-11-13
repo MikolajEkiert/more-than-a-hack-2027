@@ -4,9 +4,10 @@
     possession run configs/x.toml          produce, validate, diagnose and log one submission
     possession log                         the experiment log as a table
     possession inspect {ball,players,gaps,tagging,labels} [--game G] [--csv F] [--json]
-    possession validate CONFIG... [--game metrica-sg3] [--seed N] [--clean] [--bootstrap N]
                                            aggregate statistics of the data or of a submission
                                            (rates, percentiles, histograms; never rows)
+    possession validate CONFIG... [--game metrica-sg3] [--seed N] [--clean] [--bootstrap N]
+                                           score configs on another, labelled match
     possession submit configs/x.toml --team NAME
                                            final file: run twice, require identical bytes,
                                            validate with the official script, write submission/

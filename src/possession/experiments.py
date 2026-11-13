@@ -89,5 +89,5 @@ def table(entries: list[dict]) -> str:
             f"{e.get('note', '')}"
         )
     lines.append("* public 5-minute window: sanity check only, not a ranking (EVALUATION.md)")
-    lines.append("  ext spF1: another, labelled match (possession validate); this is what decides")
+    lines.append("  ext spF1: another, labelled match (possession validate); ranks versions")
     return "\n".join(lines)
