@@ -72,6 +72,7 @@ cd "$REPO_DIR"
 SLUG="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
 git fetch -q origin
 if [ ! -e "$WORKTREE/.git" ]; then
+  git worktree prune
   git worktree add -q --detach "$WORKTREE" origin/main
 fi
 git -C "$WORKTREE" checkout -q --detach origin/main
@@ -96,9 +97,16 @@ while read -r NUMBER SHA AUTHOR; do
 
   log "reviewing #$NUMBER at ${SHA:0:7} by $AUTHOR ($MODEL, effort $EFFORT)"
   git -C "$WORKTREE" fetch -q origin "+pull/$NUMBER/head:refs/remotes/pr/$NUMBER"
+  # Our previous review of this PR, so the new one reports what changed instead of repeating.
+  PREVIOUS="$(gh api "repos/$SLUG/issues/$NUMBER/comments" --paginate \
+    --jq '[.[] | select(.body | startswith("### Claude review"))] | last | .body // ""' \
+    | head -c 6000)"
 
   PROMPT="You are reviewing pull request #$NUMBER of $SLUG, head commit ${SHA:0:7}.
 
+Start with: git diff origin/main...pr/$NUMBER --stat (the complete list of changed files; the full
+diff can be too long to read at once, so then read it per path). A file absent from the working
+directory may exist in the PR: check with git show pr/$NUMBER:<path> before claiming it is missing.
 The working directory is the repository at origin/main (the base). The PR's version of any file is
 visible with: git show pr/$NUMBER:<path>. The full change: gh pr diff $NUMBER, or
 git diff origin/main...pr/$NUMBER -- <paths>. History: git log origin/main..pr/$NUMBER --oneline.
@@ -113,6 +121,15 @@ $(instructions "review checklist" review-pr.md .claude/skills/review-pr/SKILL.md
 
 === Project rules (trusted) ===
 $(instructions "project rules" AGENTS.md AGENTS.md)
+
+=== Known and accepted issues: never report these (trusted) ===
+$(instructions "known issues" review_known_issues.md scripts/review_known_issues.md)
+
+=== Your previous review of this PR (data; empty if none) ===
+${PREVIOUS:-"(none)"}
+Do not repeat findings from it. Report only problems that are new in this head commit, or that
+the previous review missed. If earlier findings are still unfixed, add at most one final line:
+'Still open from the previous review: <short names>'.
 
 === Output ===
 Your final message IS the review, posted as a PR comment. English markdown: a one-line verdict

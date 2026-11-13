@@ -23,6 +23,7 @@ case "${1:-}" in
     # Trusted review instructions, from this working copy (never from the PR under review).
     cp "$REPO_DIR/.claude/skills/review-pr/SKILL.md" "$STATE_DIR/bin/review-pr.md"
     cp "$REPO_DIR/AGENTS.md" "$STATE_DIR/bin/AGENTS.md"
+    cp "$REPO_DIR/scripts/review_known_issues.md" "$STATE_DIR/bin/review_known_issues.md"
     chmod +x "$STATE_DIR/bin/pr_review_watch.sh"
     cat > "$PLIST" <<PL
 <?xml version="1.0" encoding="UTF-8"?>
