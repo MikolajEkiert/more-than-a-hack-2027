@@ -187,8 +187,8 @@ files that only existed locally. Section 7 records how that was closed.
    (numpy 2.4.6; the branch's own environment had 1.26.4), the model file is byte-identical to
    the one the branch trained, the submission file has the same sha256 as before the port, and
    the external scores are the same: 0.659 (`label_free`) and 0.561 (`published_baselines`),
-   accepted against `unsup_v2` under both. Runs: `experiments/runs/20261114T011614*` (the
-   match), `T011821*` and `T011930*` (external).
+   accepted against `unsup_v2` under both. Runs: `experiments/runs/20261114T012451*` (the
+   match), `T012556*` and `T012701*` (external).
 3. **Only the model is taken from the package.** Its own decoder, command line and kick-off rule
    (which reads the organisers' published kick-off frame) stay in `solution/` for the supervised
    track's notebooks, but the pipeline calls none of them. The kick-off rule in use is

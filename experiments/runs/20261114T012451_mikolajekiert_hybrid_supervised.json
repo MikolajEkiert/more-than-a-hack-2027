@@ -1,0 +1,57 @@
+{
+  "author": "MikolajEkiert",
+  "config": {
+    "ball_state": {
+      "method": "blend",
+      "sources": [
+        "supervised",
+        "kickoff_wait"
+      ]
+    },
+    "decode": {
+      "method": "switch_cost",
+      "restart_cost": 12.0,
+      "snap_end_s": 3.0,
+      "snap_start_s": 3.0,
+      "stop_cost": 12.0,
+      "turnover_cost": 5.0
+    },
+    "game": null,
+    "name": "hybrid_supervised",
+    "team": {
+      "method": "blend",
+      "sources": [
+        "supervised"
+      ]
+    }
+  },
+  "config_path": "configs/hybrid_supervised.toml",
+  "csv_sha256": "25f146c056a7f76b73ad9c5a35b85066930b44ba675715133681bc7b5e70a298",
+  "diagnostics": {
+    "fps": 25,
+    "home_share": 0.5985,
+    "label_share_graded": {
+      "A": 0.2034,
+      "D": 0.4935,
+      "H": 0.3032,
+      "X": 0.0
+    },
+    "mean_possession_s": 10.73,
+    "n_frames": 199319,
+    "n_possessions": 300
+  },
+  "git_branch": "task/08-supervised-in-pipeline",
+  "git_commit": "94290c2",
+  "git_dirty": false,
+  "name": "hybrid_supervised",
+  "note": "task 08: hybrid, model trained by the repository",
+  "public_sanity": {
+    "macroF1": 0.8481,
+    "n_gt_possessions": 17,
+    "n_pred_possessions": 16,
+    "note": "public 5 min, 17 possessions: sanity only, never for choosing between versions",
+    "spellF1": 0.5939
+  },
+  "seconds": 5.5,
+  "time_utc": "2026-11-14T01:24:51Z"
+}
