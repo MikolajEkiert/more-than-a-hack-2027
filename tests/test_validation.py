@@ -377,3 +377,28 @@ def test_stoppage_context_separates_stoppages_with_the_ball_in_view():
     assert context["lost_stoppage_called_live"] == 0.0
     nothing_dead = validation.stoppage_context(labels, np.full(400, "H"), match)
     assert nothing_dead["stoppage_ball_seen"] is None
+
+
+def test_agreement_statistics_need_no_labels():
+    from possession.pipeline import Result
+
+    match = make_match(n=600, ungraded_head=0)
+    n = match.n_frames
+    labels = np.where(np.arange(n) % 200 < 120, "H", "A")
+    labels[400:500] = "D"
+    p_home = np.where(labels == "H", 0.9, 0.2)
+    a = Result(labels=labels, p_alive=np.where(labels == "D", 0.1, 0.9), p_home=p_home)
+    same = validation.agreement(match, a, a)
+    assert same["possession_agreement"] == 1.0 and same["team_agreement"] == 1.0
+    live = labels != "D"
+    assert same["team_margin"] == pytest.approx(np.mean(np.abs(2 * p_home[live] - 1)), abs=1e-4)
+    assert same["ball_missing"] == pytest.approx(np.mean(~match.ball_seen), abs=1e-4)
+
+    flipped = np.where(labels == "H", "A", np.where(labels == "A", "H", "D"))
+    other = validation.agreement(match, a, Result(labels=flipped, p_alive=a.p_alive, p_home=p_home))
+    assert other["possession_agreement"] == 0.0 and other["team_agreement"] == 0.0
+
+    target = {k: 0.5 for k in validation.AGREEMENT_KEYS}
+    assert validation.agreement_loss(target, target) == 0.0
+    off = {**target, "team_margin": 0.8}
+    assert validation.agreement_loss(off, target) == pytest.approx(0.3 / np.sqrt(3))

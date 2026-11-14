@@ -8,7 +8,9 @@
                                            (rates, percentiles, histograms; never rows)
     possession validate CONFIG... [--suite S] [--profile P] [--against CONFIG] [--games a,b]
                                            score configs on other, labelled matches
-    possession calibrate [--write]         fit a degradation profile to the published baselines
+    possession calibrate [--target match] [--write]
+                                           fit a degradation profile (to label-free statistics
+                                           of the match, or to the published baseline scores)
     possession export [--profile P]        write the validation conditions' tracking to .npz
     possession submit configs/x.toml --team NAME
                                            final file: run twice, require identical bytes,
@@ -250,10 +252,66 @@ def cmd_export(args) -> int:
     return 0
 
 
+def _calibrate_to_match(args) -> int:
+    """Fit the profile `match_like` to label-free statistics of the competition match."""
+    from possession import config as config_mod
+    from possession import loader, pipeline, validation
+
+    config_a, config_b = args.configs.split(",")
+    games = _csv(args.games) if args.games else list(validation.GAMES)
+    seeds = [int(seed) for seed in _csv(args.seeds)]
+    match = loader.load_match(verbose=False)
+    target = validation.agreement(
+        match,
+        pipeline.run(config_mod.load(config_a), match),
+        pipeline.run(config_mod.load(config_b), match),
+    )
+    print(f"competition match, no labels ({config_a} against {config_b}): {target}")
+
+    def progress(row):
+        stats = {k: row[k] for k in (*validation.AGREEMENT_KEYS, "ball_missing")}
+        print(f"  loss {row['loss']:.4f}  {stats}  {row['overrides']}", flush=True)
+
+    rows = validation.calibrate_to_match(
+        config_a, config_b, target, games, seeds, processes=args.processes, progress=progress
+    )
+    best = rows[0]
+    print(f"best: loss {best['loss']}  {best['overrides']}")
+    for name in ("label_free", "published_baselines"):
+        params = validation.degradation_profile(name)
+        near = [r for r in rows if all(params[k] == v for k, v in r["overrides"].items())]
+        if near:
+            print(f"for comparison, the grid point of {name}: loss {near[0]['loss']}")
+    if args.write:
+        params = {**validation.degradation_profile("label_free"), **best["overrides"]}
+        evidence = {
+            "games": games,
+            "seeds": seeds,
+            "configs": [config_a, config_b],
+            "target_competition_match": target,
+            "fitted": {k: v for k, v in best.items() if k != "overrides"},
+            "grid": {k: list(v) for k, v in validation.MATCH_GRID.items()},
+            "runners_up": [{"loss": r["loss"], "overrides": r["overrides"]} for r in rows[1:4]],
+        }
+        source = (
+            "Fitted by `possession calibrate --target match` so that three label-free statistics"
+            " of our two pipelines on the degraded external matches equal the same statistics on"
+            " the competition match: how often they agree on possessions, how often on the team,"
+            " and how sure the team evidence is. Uses no label of the match and no published"
+            " score."
+        )
+        path = validation.write_profile("match_like", params, source, evidence)
+        print(f"wrote {_rel(path)}")
+    return 0
+
+
 def cmd_calibrate(args) -> int:
-    """Fit a degradation profile to the organisers' published full-match baseline scores."""
+    """Fit a degradation profile: to label-free statistics of the match, or to the organisers'
+    published full-match baseline scores."""
     from possession import validation
 
+    if args.target == "match":
+        return _calibrate_to_match(args)
     games = _csv(args.games) if args.games else list(validation.GAMES)
     seeds = [int(seed) for seed in _csv(args.seeds)]
     base = validation.baseline_residual(games, seeds, profile="label_free")
@@ -368,7 +426,14 @@ def main(argv=None) -> int:
     p.add_argument("--clean", action="store_true")
     p.set_defaults(fn=cmd_export)
 
-    p = sub.add_parser("calibrate", help="fit a degradation profile to the published baselines")
+    p = sub.add_parser("calibrate", help="fit a degradation profile")
+    p.add_argument("--target", default="published", choices=["published", "match"])
+    p.add_argument(
+        "--configs",
+        default="configs/hybrid_supervised.toml,configs/unsup_v2.toml",
+        help="target match: the two configs whose agreement is matched",
+    )
+    p.add_argument("--processes", type=int, default=4)
     p.add_argument("--games", default="")
     p.add_argument("--seeds", default="0,1")
     p.add_argument("--write", action="store_true", help="write configs/degradation/")

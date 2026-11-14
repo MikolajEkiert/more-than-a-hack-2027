@@ -798,6 +798,104 @@ def calibrate(games=GAMES, seeds=(0, 1), base: str = "label_free", progress=None
     return sorted(rows, key=lambda row: row["rmse"])
 
 
+# -- calibration against label-free statistics of the competition match ------------------------
+
+# The same parameters as CALIBRATION_GRID, with larger ball offsets: what is fitted here is how
+# hard the evidence is, and the offset is the parameter that drives that.
+MATCH_GRID = {
+    "lost_ball_share": (0.08, 0.15, 0.25, 0.35),
+    "ball_offset_m": (1.0, 1.5, 2.0, 2.5),
+    "visible_dead": CALIBRATION_GRID["visible_dead"],
+}
+AGREEMENT_KEYS = ("possession_agreement", "team_agreement", "team_margin")
+
+
+def agreement(match: Match, a, b) -> dict:
+    """Label-free statistics of two pipelines' results (`pipeline.Result`) on one match.
+
+    possession_agreement  spellF1 of b's labels scored against a's as if those were the truth
+    team_agreement        share of the frames both call play on which they name the same team
+    team_margin           mean |2 p_home - 1| of a's team evidence where a's evidence says play
+    ball_missing          share of graded frames without a ball position (of the tracking alone)
+    The first three say how hard the tracking makes the task for our two tracks; none needs a
+    label, so they can be measured on the competition match and on a degraded external match.
+    """
+    graded = match.graded
+    live_a, live_b = np.isin(a.labels, ("H", "A")), np.isin(b.labels, ("H", "A"))
+    both = graded & live_a & live_b
+    home = np.asarray(a.p_home, dtype=np.float64)
+    sure = graded & (np.asarray(a.p_alive) >= 0.5) & ~np.isnan(home)
+    return {
+        "possession_agreement": score(b.labels, a.labels)["spellF1"],
+        "team_agreement": round(float(np.mean(a.labels[both] == b.labels[both])), 4),
+        "team_margin": round(float(np.mean(np.abs(2.0 * home[sure] - 1.0))), 4),
+        "ball_missing": round(float(np.mean(~match.ball_seen[graded])), 4),
+    }
+
+
+def agreement_loss(stats: dict, target: dict) -> float:
+    """Root mean squared difference over `AGREEMENT_KEYS`."""
+    return float(np.sqrt(np.mean([(stats[k] - target[k]) ** 2 for k in AGREEMENT_KEYS])))
+
+
+def _agreement_job(job) -> dict:
+    """Statistics of one degraded external match (a worker of `calibrate_to_match`)."""
+    import os
+
+    os.environ["POSSESSION_NO_FEATURE_CACHE"] = "1"  # dozens of throw-away matches: no disk cache
+    from possession import config as config_mod
+    from possession import pipeline, stages  # noqa: F401  (importing stages registers methods)
+
+    config_a, config_b, game, seed, base, overrides = job
+    clean, truth = _load(game)[0], load_external(game, "touch")[1]
+    match = degrade(clean, truth, seed=seed, profile=base, **overrides)
+    a = pipeline.run(config_mod.load(config_a), match)
+    b = pipeline.run(config_mod.load(config_b), match)
+    return agreement(match, a, b)
+
+
+def calibrate_to_match(
+    config_a: str,
+    config_b: str,
+    target: dict,
+    games=GAMES,
+    seeds=(0,),
+    base: str = "label_free",
+    processes: int = 1,
+    progress=None,
+) -> list[dict]:
+    """Search `MATCH_GRID` for the degradation under which the two configs agree with each other
+    as they do on the competition match (`target`, from `agreement`); rows sorted best first."""
+    points = [
+        {
+            "lost_ball_share": share,
+            "ball_offset_m": offset,
+            "visible_dead_prob": probability,
+            "visible_dead_s": list(seconds),
+        }
+        for share in MATCH_GRID["lost_ball_share"]
+        for offset in MATCH_GRID["ball_offset_m"]
+        for probability, seconds in MATCH_GRID["visible_dead"]
+    ]
+    conditions_ = [(game, seed) for game in games for seed in seeds]
+    jobs = [(config_a, config_b, g, s, base, point) for point in points for g, s in conditions_]
+    if processes > 1:
+        from multiprocessing import Pool
+
+        with Pool(processes) as pool:
+            results = pool.map(_agreement_job, jobs, chunksize=1)
+    else:
+        results = [_agreement_job(job) for job in jobs]
+    rows = []
+    for index, point in enumerate(points):
+        part = results[index * len(conditions_) : (index + 1) * len(conditions_)]
+        stats = {k: round(float(np.mean([r[k] for r in part])), 4) for k in part[0]}
+        rows.append({"overrides": point, **stats, "loss": round(agreement_loss(stats, target), 4)})
+        if progress:
+            progress(rows[-1])
+    return sorted(rows, key=lambda row: row["loss"])
+
+
 def write_profile(name: str, params: dict, source: str, evidence: dict | None = None) -> Path:
     """Write configs/degradation/<name>.json (the file both documents and defines a profile)."""
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)

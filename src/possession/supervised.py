@@ -252,8 +252,16 @@ def probabilities(match: Match, labels: str = "raw", data: str = "idsse") -> np.
 
 
 def _predict(match: Match, labels: str, data: str) -> np.ndarray:
+    """Probabilities of the full model for `match`. The package caches the match's features on
+    disk; with POSSESSION_NO_FEATURE_CACHE set they are computed and thrown away, which is the
+    same numbers (the package rounds features to float16 on every path)."""
     booster, feature_fn = model(labels, data)
     _, _, submission, _ = _package()
+    if os.environ.get("POSSESSION_NO_FEATURE_CACHE"):
+        from solution import cache as package_cache
+
+        x = feature_fn(container(match))[0].astype(package_cache.FEATURE_DTYPE)
+        return np.asarray(booster.predict(x), float)
     return np.asarray(submission.predict_match(booster, feature_fn, container(match)), float)
 
 
