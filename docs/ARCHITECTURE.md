@@ -103,6 +103,13 @@ parameter `labels` names the label function the model is trained on.
     set from label-free aggregates of our tracking; `published_baselines` is fitted so that the
     organiser baselines score what EVALUATION.md publishes for the full match, and is harsher.
     One degraded match serves both label readings; 3 seeds per match.
+  - **A second set, `--suite idsse`**: the seven IDSSE matches the supervised model is trained
+    on, degraded as for training, each scored by a model trained on the other six
+    (`supervised.idsse_conditions`; the match carries its out-of-fold prediction and cannot be
+    scored without one). Readings `controlled1.5` and `controlled3.5` count; the provider's
+    flags are reported only. It is a veto, not evidence (docs/FUSION.md section 8). Every cell
+    also reports how true stoppages with the ball in view are labelled, which the Metrica
+    matches cannot test.
   - **Acceptance rule, fixed in advance** (`validation.compare`, printed by `--against`): mean
     spellF1 gain of at least 0.02, no loss under either label reading, and a win on at least two
     of the three matches.

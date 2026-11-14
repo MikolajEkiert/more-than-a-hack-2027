@@ -116,3 +116,47 @@ def test_models_in_the_repository_match_their_listing():
         text = gzip.decompress(path.read_bytes())
         assert hashlib.sha256(text).hexdigest() == listing[path.name[: -len(".gz")]]
         assert text.startswith(b"tree\n")  # a LightGBM text model
+
+
+def test_a_container_round_trips_through_a_match():
+    match = make_match(n=400)
+    back = supervised.to_match(supervised.container(match))
+    for key in ("px", "py", "bx", "by", "team", "half"):
+        np.testing.assert_array_equal(
+            supervised.container(back)[key], supervised.container(match)[key]
+        )
+    assert back.fps == 25 and back.game == match.game
+    assert back.players.shape == match.players.shape
+    assert np.isnan(back.ball[:, 2]).all()  # the container carries no ball speed
+    moving = ~np.isnan(back.players[:, :, 2])
+    assert moving.any() and (back.players[:, :, 2][moving] >= 0).all()  # speed from positions
+
+
+@pytest.mark.needs_model  # keeps the real `probabilities`; the model itself is never built here
+def test_a_training_match_is_only_ever_scored_out_of_fold(monkeypatch):
+    from possession import validation
+
+    def no_model(labels="raw"):
+        raise AssertionError("the full model must not be used for a training match")
+
+    monkeypatch.setattr(supervised, "model", no_model)
+    base = make_match(n=300)
+    held = supervised.to_match({**supervised.container(base), "name": "IDSSE-TEST_deg0"})
+    asked = []
+
+    def out_of_fold(labels="raw"):
+        asked.append(labels)
+        return fake_probabilities(held)
+
+    held._cache[supervised.HELD_OUT] = out_of_fold
+    np.testing.assert_array_equal(supervised.probabilities(held), fake_probabilities(held))
+    supervised.probabilities(held, "tau2")
+    assert asked == ["raw", "tau2"]  # one out-of-fold prediction per set of training labels
+
+    bare = supervised.to_match({**supervised.container(base), "name": "IDSSE-TEST_deg0"})
+    with pytest.raises(RuntimeError):
+        supervised.probabilities(bare)  # a training match without an out-of-fold prediction
+    truth = np.where(base.graded, "H", "X")
+    degraded = validation.degrade(held, truth, seed=0)  # a copy loses the attached prediction
+    with pytest.raises(RuntimeError):
+        supervised.probabilities(degraded)

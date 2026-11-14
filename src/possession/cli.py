@@ -6,7 +6,7 @@
     possession inspect {ball,players,gaps,tagging,labels} [--game G] [--csv F] [--json]
                                            aggregate statistics of the data or of a submission
                                            (rates, percentiles, histograms; never rows)
-    possession validate CONFIG... [--profile P] [--against CONFIG] [--games a,b] [--seeds 0,1,2]
+    possession validate CONFIG... [--suite S] [--profile P] [--against CONFIG] [--games a,b]
                                            score configs on other, labelled matches
     possession calibrate [--write]         fit a degradation profile to the published baselines
     possession export [--profile P]        write the validation conditions' tracking to .npz
@@ -108,7 +108,7 @@ def _csv(text: str) -> list[str]:
     return [part.strip() for part in text.split(",") if part.strip()]
 
 
-def _evaluate(config_path: str, games, seeds, profile):
+def _evaluate(config_path: str, games, seeds, profile, suite="metrica"):
     """(config, cells, seconds, last run's diagnostics) of one config on the external matches."""
     from possession import config as config_mod
     from possession import pipeline, scoring, validation
@@ -122,53 +122,99 @@ def _evaluate(config_path: str, games, seeds, profile):
         return labels
 
     started = time.time()
-    cells = validation.evaluate(run, games=games, seeds=seeds, profile=profile)
+    cells = validation.evaluate(run, games=games, seeds=seeds, profile=profile, suite=suite)
     return cfg, cells, time.time() - started, last.get("diagnostics", {})
+
+
+def _package_decoder(games, seeds):
+    """Cells of the supervised package's own decoder on the IDSSE matches, for comparison."""
+    from possession import supervised, validation
+
+    def run(match):
+        return match._cache[supervised.PACKAGE_LABELS]("raw")
+
+    return validation.evaluate(run, games=games, seeds=seeds, suite="idsse")
+
+
+def _row(name, cells, readings, seconds=None):
+    """One line of the validation table: mean, each reading, each match, possessions, stoppages."""
+    from possession import validation
+
+    summary = validation.summarise(cells, readings=readings)
+    counted = [c for c in cells if c["convention"] in summary["readings"]]
+    ratio = sum(c["n_pred_possessions"] for c in counted) / max(
+        sum(c["n_gt_possessions"] for c in counted), 1
+    )
+    seen_live = validation.summarise(cells, "seen_stoppage_called_live", readings)["mean"]
+    return (
+        f"{name:<28} {summary['mean']:>6.4f} "
+        + " ".join(f"{value:>13.4f}" for value in summary["by_convention"].values())
+        + "   "
+        + " ".join(f"{value:.3f}"[1:] for value in summary["by_game"].values())
+        + f"   {ratio:>5.2f}"
+        + (f"   {seen_live:>5.2f}" if seen_live is not None else "       -")
+        + (f"   {seconds:.0f} s" if seconds is not None else "")
+    )
 
 
 def cmd_validate(args) -> int:
     """Score configs on other, labelled matches (never the competition match)."""
     from possession import experiments, validation
 
-    games = _csv(args.games) if args.games else list(validation.GAMES)
+    suite = args.suite
+    games = _csv(args.games) if args.games else None
     seeds = [int(seed) for seed in _csv(args.seeds)]
-    profile = None if args.clean else args.profile
-    condition = "clean" if args.clean else f"degraded(profile={profile}, seeds={seeds})"
-    print(f"external matches {games}, {condition}; spellF1 under each label convention")
-    header = f"{'config':<28} {'mean':>6} " + " ".join(f"{c:>10}" for c in validation.CONVENTIONS)
-    print(header + "   " + "  ".join(f"{g[-3:]}" for g in games) + "   poss pred/gt (last)")
+    profile = None if args.clean or suite != "metrica" else args.profile
+    readings = validation.rule_readings(suite)
+    if suite == "metrica":
+        condition = "clean" if args.clean else f"degraded(profile={profile}, seeds={seeds})"
+    else:
+        condition = f"{suite}, each match scored by a model that never saw it"
+    print(f"suite {suite}: {condition}; spellF1, mean over the readings {list(readings)}")
 
-    results = {}
-    reference = _evaluate(args.against, games, seeds, profile) if args.against else None
+    results = []
+    reference = _evaluate(args.against, games, seeds, profile, suite) if args.against else None
     for path in args.configs:
-        cfg, cells, seconds, diag = _evaluate(path, games, seeds, profile)
-        results[cfg.name] = cells
-        summary = validation.summarise(cells)
-        last = cells[-1]
-        print(
-            f"{cfg.name:<28} {summary['mean']:>6.4f} "
-            + " ".join(f"{summary['by_convention'][c]:>10.4f}" for c in validation.CONVENTIONS)
-            + "   "
-            + "  ".join(f"{summary['by_game'][g]:.3f}"[1:] for g in games)
-            + f"   {last['n_pred_possessions']}/{last['n_gt_possessions']}   {seconds:.0f} s"
-        )
+        results.append(_evaluate(path, games, seeds, profile, suite))
+
+    first = results[0][1]
+    present = list(dict.fromkeys(c["convention"] for c in first))
+    names = sorted({c["game"] for c in first})
+    print(
+        f"{'config':<28} {'mean':>6} "
+        + " ".join(f"{c:>13}" for c in present)
+        + "   "
+        + " ".join(f"{g[-3:]:>4}" for g in names)
+        + "   pred/true possessions   stoppage with ball in view called play"
+    )
+    if suite == "idsse":
+        print(_row("(package's own decoder)", _package_decoder(games, seeds), readings))
+    for cfg, cells, seconds, diag in results:
+        print(_row(cfg.name, cells, readings, seconds))
+        summary = validation.summarise(cells, readings=readings)
         external = {
-            "games": games,
+            "suite": suite,
+            "games": names,
             "seeds": seeds,
             "profile": profile,
             "condition": condition,
             "spellF1": summary["mean"],
             "summary": summary,
-            "macroF1": validation.summarise(cells, "macroF1")["mean"],
+            "macroF1": validation.summarise(cells, "macroF1", readings)["mean"],
             "cells": cells,
         }
         if reference:
-            verdict = validation.compare(cells, reference[1])
+            verdict = validation.compare(cells, reference[1], readings=readings)
             external["against"] = {"name": reference[0].name, **verdict}
             print(
-                f"    vs {reference[0].name}: gain {verdict['gain']:+.4f}, by convention "
+                f"    vs {reference[0].name}: gain {verdict['gain']:+.4f}, by reading "
                 f"{verdict['gain_by_convention']}, wins {verdict['games_won']}/{verdict['n_games']}"
                 f" matches -> {'ACCEPT' if verdict['accepted'] else 'reject'}"
+                + (
+                    f"  (reported only: {verdict['gain_reported_only']})"
+                    if verdict["gain_reported_only"]
+                    else ""
+                )
             )
         if not args.no_log:
             experiments.record(
@@ -307,6 +353,7 @@ def main(argv=None) -> int:
     p.add_argument("--games", default="", help="comma-separated; default: all external matches")
     p.add_argument("--seeds", default="0,1,2", help="seeds of the degradation")
     p.add_argument("--profile", default="label_free", help="a name in configs/degradation/")
+    p.add_argument("--suite", default="metrica", choices=["metrica", "idsse"], help="which set")
     p.add_argument("--clean", action="store_true", help="do not degrade the tracking")
     p.add_argument("--against", help="config to compare with under the acceptance rule")
     p.add_argument("--note", default="")
