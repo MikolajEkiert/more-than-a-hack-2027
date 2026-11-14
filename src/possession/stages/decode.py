@@ -235,15 +235,18 @@ def short_spells(
     max_s: float,
     policy: str,
     max_llr: float = 0.0,
+    beside_dead: bool = False,
 ) -> np.ndarray:
     """Relabel short team spells sandwiched between two spells of the other team.
 
     A spell of one team shorter than `max_s` whose neighbours on both sides are spells of the
     other team becomes D ("dead": the stoppage keeps the neighbours apart without claiming a
     possession that may be noise) or the neighbours' team ("merge"); "keep" leaves it. With
-    `max_llr` above zero only spells whose mean |team log-odds| (0 on frames without team
-    evidence) is below it are touched. Spells are visited shortest first (then by start) and
-    re-checked against the labels as they stand, so chains of short spells resolve one at a time.
+    `beside_dead`, a spell with the other team on one side and a stoppage on the other is treated
+    the same way ("merge" gives it to the other team). With `max_llr` above zero only spells whose
+    mean |team log-odds| (0 on frames without team evidence) is below it are touched. Spells are
+    visited shortest first (then by start) and their neighbours are read from the labels as they
+    stand, so chains of short spells resolve one at a time.
     """
     if policy not in SHORT_SPELL_POLICIES:
         raise ValueError(
@@ -264,11 +267,12 @@ def short_spells(
         spells += [(b - a, a, b) for a, b in zip(starts.tolist(), stops.tolist(), strict=True)]
     n = len(labels)
     for length, start, stop in sorted(s for s in spells if s[0] < limit):
-        team = out[start]
-        other = "A" if team == "H" else "H"
-        if start == 0 or stop >= n or out[start - 1] != other or out[stop] != other:
+        if start == 0 or stop >= n:
             continue
-        if not (out[start:stop] == team).all():
+        team = labels[start]  # a spell's own frames change only when it is visited
+        other = "A" if team == "H" else "H"
+        sides = {out[start - 1], out[stop]}
+        if sides != {other} and not (beside_dead and sides == {other, "D"}):
             continue
         if max_llr > 0 and strength[start:stop].sum() / length >= max_llr:
             continue
@@ -316,6 +320,7 @@ def switch_cost(
     short_spell_s: float = 0.0,
     short_spell_policy: str = "keep",
     short_spell_max_llr: float = 0.0,
+    short_spell_beside_dead: bool = False,
     change_shift_frames: int = 0,
 ) -> np.ndarray:
     """Most likely H / A / D sequence under switching costs, decoded per half (no smoothing lag).
@@ -332,8 +337,9 @@ def switch_cost(
         (`snap_stoppage_edges`)
       * `line_snap_s`: a stoppage starts where the ball left the pitch (`snap_to_line_exit`)
       * `reentry_snap_s`: a restart where the ball came back in (`snap_to_reentry`)
-      * `short_spell_s`, `short_spell_policy`, `short_spell_max_llr`: short spells between two
-        spells of the other team become D or merge (`short_spells`)
+      * `short_spell_s`, `short_spell_policy`, `short_spell_max_llr`,
+        `short_spell_beside_dead`: short spells between two spells of the other team (or one and
+        a stoppage) become D or merge (`short_spells`)
       * `change_shift_frames`: every direct H <-> A change moves earlier (`shift_changes`)
     """
     if short_spell_policy not in SHORT_SPELL_POLICIES:
@@ -378,7 +384,13 @@ def switch_cost(
         labels = snap_to_reentry(match, labels, reentry_snap_s, line_margin_m, restart_speed_m_s)
     if short_spell_s > 0 and short_spell_policy != "keep":
         labels = short_spells(
-            match, labels, p_home, short_spell_s, short_spell_policy, short_spell_max_llr
+            match,
+            labels,
+            p_home,
+            short_spell_s,
+            short_spell_policy,
+            short_spell_max_llr,
+            short_spell_beside_dead,
         )
     if change_shift_frames > 0:
         labels = shift_changes(labels, change_shift_frames)

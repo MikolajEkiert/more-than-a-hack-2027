@@ -35,9 +35,14 @@ G = _grid14()
 
 
 def _memoise_evidence(pipeline) -> dict:
-    """Make `pipeline._call` keep the ball_state and team outputs of the current condition."""
+    """Make `pipeline._call` keep the ball_state and team outputs of the current condition.
+
+    A worker process runs several jobs: the wrapper always wraps the original function, never a
+    previous job's wrapper (whose memo would hand out another condition's evidence)."""
     memo: dict = {}
-    original = pipeline._call
+    if not hasattr(pipeline, "_unmemoised_call"):
+        pipeline._unmemoised_call = pipeline._call
+    original = pipeline._unmemoised_call
 
     def call(stage, stage_config, *inputs):
         if stage == "decode":
