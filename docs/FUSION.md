@@ -262,3 +262,95 @@ costs 8 and 20, loses 0.030 under `label_free` / `touch` (docs/DECISIONS.md, 202
 as things stand it fails point 3. Its training labels also contradict the
 organisers' reference: they merge other-team spells under 2 s into their neighbours, and the
 public window keeps such spells of 0.8 s and 1.3 s. The expected outcome is version 1.
+
+## 9. Measured under the rule of section 8 (task 10, 2026-11-14)
+
+**The profile `match_like`.** `possession calibrate --target match --write` searched 32 grid
+points for the degradation under which `hybrid_supervised` and `unsup_v2` agree with each other
+on the Metrica matches as they do on the competition match.
+
+| statistic, no labels | competition match | `match_like` | `label_free` | PFF test matches |
+|---|---|---|---|---|
+| possessions of one pipeline scored against the other | 0.456 | 0.478 | 0.63 | 0.685 |
+| same team where both say play | 0.829 | 0.814 | | 0.935 |
+| mean team margin of the model | 0.678 | 0.678 | | 0.823 |
+| share of frames without a ball | 0.407 | 0.483 | | 0.451 |
+
+Fitted values: the ball is lost on 25% of live frames, its offset is 2.0 m, it stays in view
+after 90% of stoppages for 1 to 6 s. `published_baselines`, fitted to something else entirely,
+has the same values except an offset of 1.5 m. Under `match_like` the organisers' baseline
+scores 0.213, `unsup_v2` 0.394 and the hybrid 0.524 (0.518 / 0.531; team accuracy 0.877).
+
+**PFF as training data** (`scripts/variant_grid.py training label_free match_like` and
+`... training pff`). spellF1 minus the submitted hybrid on the Metrica matches (touch /
+controlled), and spellF1 on the 16 PFF test matches, which the 48 PFF training matches never
+include.
+
+| model trained on | cost of a change of team | `label_free` | `match_like` | mean of the four | 16 PFF test matches |
+|---|---|---|---|---|---|
+| IDSSE (submitted) | 3 | +0.002 / -0.030 | -0.022 / -0.053 | -0.026 | 0.772 |
+| IDSSE (submitted) | 5 | 0 (0.659) | 0 (0.524) | 0 | **0.773** |
+| IDSSE (submitted) | 8 | -0.021 / +0.027 | 0.000 / +0.034 | +0.010 | 0.755 |
+| IDSSE and PFF | 3 | +0.003 / -0.011 | -0.039 / -0.061 | -0.027 | 0.880 |
+| IDSSE and PFF | 5 | -0.006 / +0.017 | -0.024 / -0.019 | -0.008 | 0.874 |
+| IDSSE and PFF | 8 | -0.024 / +0.031 | -0.015 / +0.017 | +0.002 | 0.855 |
+| PFF | 3 | -0.022 / -0.027 | -0.098 / -0.114 | -0.065 | 0.911 |
+| PFF | 5 | -0.029 / -0.003 | -0.081 / -0.083 | -0.049 | 0.905 |
+| PFF | 8 | -0.042 / +0.013 | -0.067 / -0.043 | -0.035 | 0.890 |
+
+A model that has seen PFF scores 0.10 to 0.14 higher on PFF at the same decoder cost, about the
+same as the submitted model under `label_free` (+0.005 for IDSSE and PFF at cost 5) and lower
+under `match_like` (-0.021 for IDSSE and PFF, -0.082 for PFF alone): it learns its provider, and
+that costs where the tracking resembles ours. No variant reaches +0.02 on the Metrica matches, so
+none changes version 1. One of them is a bet on the label reading in the sense of section 8
+(IDSSE and PFF at cost 8: it gains under `controlled`, loses under `touch`), but its mean of
++0.002 is below every comparable member of the family below, so the choice of the version 3
+candidate is the same with or without it. On the PFF matches the submitted model predicts 0.99
+possessions per true one at a cost of 5.
+
+**The version 3 family** (`scripts/variant_grid.py family label_free match_like`). spellF1 minus
+version 1, by scenario; all 18 members are in docs/DECISIONS.md. The members that matter:
+
+| labels, cost of a change, cost of a stoppage | `label_free` touch | `label_free` controlled | `match_like` touch | `match_like` controlled | mean | worst |
+|---|---|---|---|---|---|---|
+| raw, 8, 20 | -0.021 | +0.030 | +0.004 | +0.041 | +0.013 | -0.021 |
+| tau1, 8, 20 | -0.018 | +0.034 | +0.009 | +0.051 | +0.019 | -0.018 |
+| tau2, 5, 20 | -0.011 | +0.022 | +0.019 | +0.043 | +0.018 | -0.011 |
+| **tau2, 8, 20** | -0.030 | +0.042 | +0.011 | +0.072 | **+0.024** | -0.030 |
+| tau2, 12, 20 | -0.061 | +0.040 | -0.005 | +0.088 | +0.016 | -0.061 |
+
+Chosen on two matches and scored on the third, the pick is `tau2, 8, 20` twice and
+`tau1, 8, 20` once; held out it gains +0.019 on average (-0.028, +0.034, +0.008, +0.061). No
+member has both a mean of +0.02 and a worst scenario above -0.02.
+
+**The decision** (`possession decide configs/hybrid_supervised.toml configs/hybrid_bet.toml`, run
+`experiments/runs/20261114T160229*`; `hybrid_bet` is `tau2, 8, 20`).
+
+| condition for version 3 | measured | passes |
+|---|---|---|
+| weighted mean over the evidence at least +0.02 | +0.024, 5-95% interval over (match, window) blocks +0.014 to +0.035 | yes |
+| no evidence scenario below -0.02 | -0.030 under `label_free` / `touch` | **no** |
+| veto IDSSE: mean at least 0, 5 of 7 matches | +0.020 (-0.018 / +0.057), 7 of 7 | yes |
+| veto PFF: mean at least 0, 9 of 16 matches | -0.052, 0 of 16 | **no** |
+| footprint: 3.5 to 7 possessions per live minute | 4.10 (version 1: 5.59) | yes |
+| footprint: dead share within 3 points of version 1 | 0.4864 against 0.4935 | yes |
+
+**Version 1 is submitted.** Version 3 would make 223 possessions on the match instead of 300
+and differs from version 1 on 3.6% of frames.
+
+**The change to version 1 that `published_baselines` alone had rejected** (section 6: our
+label-free evidence added at half weight in both stages, `configs/hybrid_plus_unsup.toml`):
+
+| set | difference to the hybrid | matches won |
+|---|---|---|
+| Metrica, `label_free` | +0.022 (touch +0.022, controlled +0.022) | 3 of 3 |
+| Metrica, `match_like` | -0.021 (-0.018, -0.025) | 0 of 3 |
+| IDSSE, out of fold | -0.012 (-0.013, -0.011) | 0 of 7 |
+| PFF test matches | +0.009 | 9 of 16 |
+
+It helps where the tracking is easy and hurts where it resembles ours, so it stays out, now
+without any use of the published scores.
+
+**A correction to section 8.** The rule quotes 4.0 possessions per live minute for the PFF
+labels. That was one match; over all 64 it is 4.7 (mean possession 13.1 s). The rule itself does
+not depend on the figure.

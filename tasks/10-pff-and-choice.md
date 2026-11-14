@@ -1,5 +1,5 @@
 ---
-status: doing
+status: review
 owner: MikolajEkiert (Claude)
 stage: infra, ball_state, team
 ---
@@ -39,10 +39,30 @@ change hands 4.7 times per live minute (public window: 4.2). Players are mostly 
 - [x] the PFF split is fixed before measuring and a test match is never trained on (tested)
 - [x] PFF as training data measured on the Metrica matches and on the PFF test matches
 - [x] `match_like` fitted without labels or published scores
-- [ ] version 3 chosen from its family by nested selection and compared with version 1 by
+- [x] version 3 chosen from its family by nested selection and compared with version 1 by
       `possession decide`; the decision logged
-- [ ] the addition that `published_baselines` alone had rejected measured under the evidence
+- [x] the addition that `published_baselines` alone had rejected measured under the evidence
       profiles and on IDSSE
 - [x] kick-off rule audited against Smart Tagging
 
 ## Log
+- 2026-11-14: PFF converted (64 matches) and split 48 / 16 before any measurement. Bridge:
+  `convert_pff`, `pff_games`, `model(labels, data)`, `pff_conditions`; suite `pff`.
+- 2026-11-14: `possession calibrate --target match --write` gave `match_like` (ball lost on 25% of
+  live frames, offset 2.0 m, ball in view after 90% of stoppages for 1-6 s). It lands next to
+  `published_baselines`. The hybrid scores 0.524 under it.
+- 2026-11-14: PFF as training data: +0.005 under `label_free`, -0.021 under `match_like`; PFF alone
+  -0.016 and -0.082. On the PFF test matches such models score 0.10 to 0.14 higher, which does not
+  carry over. Not adopted.
+- 2026-11-14: version 3 is `tau2`, costs 8 and 20 (`configs/hybrid_bet.toml`), chosen on two matches
+  and scored on the third. `possession decide`: mean +0.024, but -0.030 under `label_free` / `touch`
+  and -0.052 on the PFF test matches (0 of 16). **Version 1 is submitted; the file is unchanged.**
+- 2026-11-14: the hybrid with our label-free evidence at half weight: +0.022 under `label_free`,
+  -0.021 under `match_like`, -0.012 on IDSSE, +0.009 on PFF. Stays out.
+- 2026-11-14: `scripts/variant_grid.py` reproduces the two grids (training data, version 3 family).
+
+## Left for the freeze (task 06)
+- `make submit CONFIG=configs/hybrid_supervised.toml TEAM=culers` on a clean `main`; the sha256
+  must be `25f146c0...`.
+- Owner: confirm that the PFF terms allow this use (validation only; nothing trained on PFF is
+  published). Owner: the form.
