@@ -1,0 +1,596 @@
+{
+  "author": "MikolajEkiert",
+  "config": {
+    "ball_state": {
+      "method": "blend",
+      "sources": [
+        "supervised",
+        "kickoff_wait",
+        "stoppage_evidence"
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        0.5
+      ]
+    },
+    "decode": {
+      "method": "switch_cost",
+      "restart_cost": 12.0,
+      "snap_end_s": 3.0,
+      "snap_start_s": 3.0,
+      "stop_cost": 12.0,
+      "turnover_cost": 5.0
+    },
+    "game": null,
+    "name": "hybrid_plus_unsup",
+    "team": {
+      "method": "blend",
+      "sources": [
+        "supervised",
+        "touch_episodes"
+      ],
+      "weights": [
+        1.0,
+        0.5
+      ]
+    }
+  },
+  "config_path": "configs/hybrid_plus_unsup.toml",
+  "csv_sha256": "",
+  "diagnostics": {
+    "fps": 25,
+    "home_share": 0.5279,
+    "label_share_graded": {
+      "A": 0.3238,
+      "D": 0.3142,
+      "H": 0.3621,
+      "X": 0.0
+    },
+    "mean_possession_s": 13.32,
+    "n_frames": 143761,
+    "n_possessions": 295
+  },
+  "external": {
+    "against": {
+      "accepted": true,
+      "gain": 0.0222,
+      "gain_by_convention": {
+        "controlled": 0.0221,
+        "touch": 0.0223
+      },
+      "gain_by_game": {
+        "metrica-sg1": 0.0075,
+        "metrica-sg2": 0.0147,
+        "metrica-sg3": 0.0446
+      },
+      "gain_reported_only": {},
+      "games_won": 3,
+      "n_games": 3,
+      "name": "hybrid_supervised"
+    },
+    "cells": [
+      {
+        "alive_dead_f1": 0.9112,
+        "convention": "touch",
+        "game": "metrica-sg1",
+        "lost_stoppage_called_live": 0.0431,
+        "macroF1": 0.8553,
+        "n_gt_possessions": 353,
+        "n_pred_possessions": 270,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.7967,
+        "spellF1": 0.6575,
+        "stoppage_ball_seen": 0.0366,
+        "team_acc_both_alive": 0.9296,
+        "windows": [
+          0.6533,
+          0.6205,
+          0.6033,
+          0.6643,
+          0.786,
+          0.68,
+          0.5538,
+          0.7652,
+          0.5586,
+          0.7565
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9112,
+        "convention": "controlled",
+        "game": "metrica-sg1",
+        "lost_stoppage_called_live": 0.0431,
+        "macroF1": 0.8582,
+        "n_gt_possessions": 238,
+        "n_pred_possessions": 270,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.7967,
+        "spellF1": 0.7031,
+        "stoppage_ball_seen": 0.0366,
+        "team_acc_both_alive": 0.9336,
+        "windows": [
+          0.7824,
+          0.7931,
+          0.7217,
+          0.6286,
+          0.776,
+          0.72,
+          0.504,
+          0.72,
+          0.6167,
+          0.7565
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9057,
+        "convention": "touch",
+        "game": "metrica-sg1",
+        "lost_stoppage_called_live": 0.0461,
+        "macroF1": 0.8507,
+        "n_gt_possessions": 353,
+        "n_pred_possessions": 289,
+        "seed": 1,
+        "seen_stoppage_called_live": 0.737,
+        "spellF1": 0.6897,
+        "stoppage_ball_seen": 0.0326,
+        "team_acc_both_alive": 0.9312,
+        "windows": [
+          0.672,
+          0.6244,
+          0.7279,
+          0.5379,
+          0.7213,
+          0.675,
+          0.6754,
+          0.7304,
+          0.7508,
+          0.8178
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9057,
+        "convention": "controlled",
+        "game": "metrica-sg1",
+        "lost_stoppage_called_live": 0.0461,
+        "macroF1": 0.8518,
+        "n_gt_possessions": 238,
+        "n_pred_possessions": 289,
+        "seed": 1,
+        "seen_stoppage_called_live": 0.737,
+        "spellF1": 0.6907,
+        "stoppage_ball_seen": 0.0326,
+        "team_acc_both_alive": 0.9318,
+        "windows": [
+          0.6667,
+          0.7548,
+          0.7304,
+          0.4941,
+          0.6593,
+          0.7368,
+          0.5913,
+          0.7333,
+          0.72,
+          0.8178
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9049,
+        "convention": "touch",
+        "game": "metrica-sg1",
+        "lost_stoppage_called_live": 0.0444,
+        "macroF1": 0.8496,
+        "n_gt_possessions": 353,
+        "n_pred_possessions": 286,
+        "seed": 2,
+        "seen_stoppage_called_live": 0.7749,
+        "spellF1": 0.6473,
+        "stoppage_ball_seen": 0.0307,
+        "team_acc_both_alive": 0.9303,
+        "windows": [
+          0.64,
+          0.6244,
+          0.6603,
+          0.7172,
+          0.5571,
+          0.6846,
+          0.4721,
+          0.7063,
+          0.7652,
+          0.6894
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9049,
+        "convention": "controlled",
+        "game": "metrica-sg1",
+        "lost_stoppage_called_live": 0.0444,
+        "macroF1": 0.8532,
+        "n_gt_possessions": 238,
+        "n_pred_possessions": 286,
+        "seed": 2,
+        "seen_stoppage_called_live": 0.7749,
+        "spellF1": 0.6947,
+        "stoppage_ball_seen": 0.0307,
+        "team_acc_both_alive": 0.9353,
+        "windows": [
+          0.6849,
+          0.7613,
+          0.7,
+          0.6824,
+          0.6776,
+          0.6952,
+          0.6,
+          0.7709,
+          0.6983,
+          0.6894
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9424,
+        "convention": "touch",
+        "game": "metrica-sg2",
+        "lost_stoppage_called_live": 0.0446,
+        "macroF1": 0.8982,
+        "n_gt_possessions": 321,
+        "n_pred_possessions": 267,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.7148,
+        "spellF1": 0.6973,
+        "stoppage_ball_seen": 0.034,
+        "team_acc_both_alive": 0.9436,
+        "windows": [
+          0.7787,
+          0.6,
+          0.6968,
+          0.7667,
+          0.7714,
+          0.8133,
+          0.6143,
+          0.675,
+          0.5478,
+          0.6947
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9424,
+        "convention": "controlled",
+        "game": "metrica-sg2",
+        "lost_stoppage_called_live": 0.0446,
+        "macroF1": 0.8919,
+        "n_gt_possessions": 229,
+        "n_pred_possessions": 267,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.7148,
+        "spellF1": 0.6871,
+        "stoppage_ball_seen": 0.034,
+        "team_acc_both_alive": 0.9337,
+        "windows": [
+          0.671,
+          0.6764,
+          0.6444,
+          0.7797,
+          0.7459,
+          0.8364,
+          0.6364,
+          0.5731,
+          0.6,
+          0.7467
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9524,
+        "convention": "touch",
+        "game": "metrica-sg2",
+        "lost_stoppage_called_live": 0.0332,
+        "macroF1": 0.9008,
+        "n_gt_possessions": 321,
+        "n_pred_possessions": 263,
+        "seed": 1,
+        "seen_stoppage_called_live": 0.8082,
+        "spellF1": 0.6815,
+        "stoppage_ball_seen": 0.0297,
+        "team_acc_both_alive": 0.9308,
+        "windows": [
+          0.6592,
+          0.545,
+          0.6839,
+          0.8267,
+          0.6884,
+          0.8357,
+          0.5333,
+          0.6494,
+          0.64,
+          0.8273
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9524,
+        "convention": "controlled",
+        "game": "metrica-sg2",
+        "lost_stoppage_called_live": 0.0332,
+        "macroF1": 0.9016,
+        "n_gt_possessions": 229,
+        "n_pred_possessions": 263,
+        "seed": 1,
+        "seen_stoppage_called_live": 0.8082,
+        "spellF1": 0.7,
+        "stoppage_ball_seen": 0.0297,
+        "team_acc_both_alive": 0.9319,
+        "windows": [
+          0.6897,
+          0.6169,
+          0.637,
+          0.8068,
+          0.6737,
+          0.8627,
+          0.6286,
+          0.7625,
+          0.6359,
+          0.6222
+        ]
+      },
+      {
+        "alive_dead_f1": 0.942,
+        "convention": "touch",
+        "game": "metrica-sg2",
+        "lost_stoppage_called_live": 0.0355,
+        "macroF1": 0.8909,
+        "n_gt_possessions": 321,
+        "n_pred_possessions": 264,
+        "seed": 2,
+        "seen_stoppage_called_live": 0.6589,
+        "spellF1": 0.6619,
+        "stoppage_ball_seen": 0.0365,
+        "team_acc_both_alive": 0.9322,
+        "windows": [
+          0.643,
+          0.6216,
+          0.6258,
+          0.7607,
+          0.79,
+          0.7933,
+          0.5509,
+          0.7171,
+          0.42,
+          0.619
+        ]
+      },
+      {
+        "alive_dead_f1": 0.942,
+        "convention": "controlled",
+        "game": "metrica-sg2",
+        "lost_stoppage_called_live": 0.0355,
+        "macroF1": 0.8919,
+        "n_gt_possessions": 229,
+        "n_pred_possessions": 264,
+        "seed": 2,
+        "seen_stoppage_called_live": 0.6589,
+        "spellF1": 0.6742,
+        "stoppage_ball_seen": 0.0365,
+        "team_acc_both_alive": 0.9339,
+        "windows": [
+          0.5879,
+          0.7321,
+          0.6296,
+          0.7733,
+          0.7657,
+          0.7855,
+          0.6341,
+          0.6261,
+          0.5059,
+          0.6706
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9636,
+        "convention": "touch",
+        "game": "metrica-sg3",
+        "lost_stoppage_called_live": 0.0455,
+        "macroF1": 0.9036,
+        "n_gt_possessions": 385,
+        "n_pred_possessions": 288,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.7482,
+        "spellF1": 0.6473,
+        "stoppage_ball_seen": 0.0462,
+        "team_acc_both_alive": 0.9282,
+        "windows": [
+          0.557,
+          0.6687,
+          0.5968,
+          0.6462,
+          0.6756,
+          0.7422,
+          0.6552,
+          0.6488,
+          0.6892,
+          0.5947
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9636,
+        "convention": "controlled",
+        "game": "metrica-sg3",
+        "lost_stoppage_called_live": 0.0455,
+        "macroF1": 0.9051,
+        "n_gt_possessions": 265,
+        "n_pred_possessions": 288,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.7482,
+        "spellF1": 0.7161,
+        "stoppage_ball_seen": 0.0462,
+        "team_acc_both_alive": 0.9305,
+        "windows": [
+          0.7032,
+          0.7051,
+          0.68,
+          0.6255,
+          0.6737,
+          0.8,
+          0.76,
+          0.7175,
+          0.7704,
+          0.6915
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9605,
+        "convention": "touch",
+        "game": "metrica-sg3",
+        "lost_stoppage_called_live": 0.0553,
+        "macroF1": 0.9029,
+        "n_gt_possessions": 385,
+        "n_pred_possessions": 309,
+        "seed": 1,
+        "seen_stoppage_called_live": 0.8307,
+        "spellF1": 0.6536,
+        "stoppage_ball_seen": 0.0419,
+        "team_acc_both_alive": 0.9339,
+        "windows": [
+          0.5481,
+          0.7188,
+          0.6387,
+          0.72,
+          0.6957,
+          0.7284,
+          0.6533,
+          0.558,
+          0.6507,
+          0.6649
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9605,
+        "convention": "controlled",
+        "game": "metrica-sg3",
+        "lost_stoppage_called_live": 0.0553,
+        "macroF1": 0.9045,
+        "n_gt_possessions": 265,
+        "n_pred_possessions": 309,
+        "seed": 1,
+        "seen_stoppage_called_live": 0.8307,
+        "spellF1": 0.7073,
+        "stoppage_ball_seen": 0.0419,
+        "team_acc_both_alive": 0.9366,
+        "windows": [
+          0.6937,
+          0.7625,
+          0.6857,
+          0.72,
+          0.6564,
+          0.7122,
+          0.7615,
+          0.6323,
+          0.7071,
+          0.7267
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9617,
+        "convention": "touch",
+        "game": "metrica-sg3",
+        "lost_stoppage_called_live": 0.0521,
+        "macroF1": 0.9027,
+        "n_gt_possessions": 385,
+        "n_pred_possessions": 295,
+        "seed": 2,
+        "seen_stoppage_called_live": 0.8362,
+        "spellF1": 0.6529,
+        "stoppage_ball_seen": 0.0451,
+        "team_acc_both_alive": 0.9313,
+        "windows": [
+          0.6617,
+          0.6765,
+          0.5806,
+          0.7118,
+          0.7122,
+          0.7711,
+          0.6621,
+          0.5368,
+          0.6235,
+          0.592
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9617,
+        "convention": "controlled",
+        "game": "metrica-sg3",
+        "lost_stoppage_called_live": 0.0521,
+        "macroF1": 0.9043,
+        "n_gt_possessions": 265,
+        "n_pred_possessions": 295,
+        "seed": 2,
+        "seen_stoppage_called_live": 0.8362,
+        "spellF1": 0.7014,
+        "stoppage_ball_seen": 0.0451,
+        "team_acc_both_alive": 0.9335,
+        "windows": [
+          0.7125,
+          0.6603,
+          0.6939,
+          0.7103,
+          0.7176,
+          0.7238,
+          0.776,
+          0.6667,
+          0.7018,
+          0.6483
+        ]
+      }
+    ],
+    "condition": "degraded(profile=label_free, seeds=[0, 1, 2])",
+    "games": [
+      "metrica-sg1",
+      "metrica-sg2",
+      "metrica-sg3"
+    ],
+    "macroF1": 0.8843,
+    "profile": "label_free",
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "spellF1": 0.6813,
+    "suite": "metrica",
+    "summary": {
+      "by_convention": {
+        "controlled": 0.6972,
+        "touch": 0.6654
+      },
+      "by_game": {
+        "metrica-sg1": 0.6805,
+        "metrica-sg2": 0.6837,
+        "metrica-sg3": 0.6798
+      },
+      "by_game_convention": {
+        "metrica-sg1": {
+          "controlled": 0.6962,
+          "touch": 0.6648
+        },
+        "metrica-sg2": {
+          "controlled": 0.6871,
+          "touch": 0.6802
+        },
+        "metrica-sg3": {
+          "controlled": 0.7083,
+          "touch": 0.6513
+        }
+      },
+      "mean": 0.6813,
+      "readings": [
+        "touch",
+        "controlled"
+      ]
+    }
+  },
+  "git_branch": "task/10-pff",
+  "git_commit": "fd135f9",
+  "git_dirty": false,
+  "name": "hybrid_plus_unsup",
+  "note": "task 10: hybrid plus our label-free evidence at half weight, measured again under the evidence profiles",
+  "public_sanity": null,
+  "seconds": 52.9,
+  "time_utc": "2026-11-14T15:40:49Z"
+}

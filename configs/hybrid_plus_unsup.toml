@@ -1,0 +1,24 @@
+# The hybrid with our label-free evidence added at half weight in both stages. Measured on
+# 2026-11-14 (docs/FUSION.md section 6): +0.022 under label_free, -0.007 under
+# published_baselines, and rejected by that second profile alone. That profile decides nothing
+# any more (docs/FUSION.md section 8), so this configuration is measured again under the rule
+# for a change to version 1: label_free and match_like, both readings, and no loss on IDSSE.
+name = "hybrid_plus_unsup"
+
+[ball_state]
+method = "blend"
+sources = ["supervised", "kickoff_wait", "stoppage_evidence"]
+weights = [1.0, 1.0, 0.5]
+
+[team]
+method = "blend"
+sources = ["supervised", "touch_episodes"]
+weights = [1.0, 0.5]
+
+[decode]
+method = "switch_cost"
+turnover_cost = 5.0
+stop_cost = 12.0
+restart_cost = 12.0
+snap_start_s = 3.0
+snap_end_s = 3.0

@@ -1,0 +1,581 @@
+{
+  "author": "MikolajEkiert",
+  "config": {
+    "ball_state": {
+      "method": "blend",
+      "sources": [
+        "supervised",
+        "kickoff_wait"
+      ]
+    },
+    "decode": {
+      "method": "switch_cost",
+      "restart_cost": 12.0,
+      "snap_end_s": 3.0,
+      "snap_start_s": 3.0,
+      "stop_cost": 12.0,
+      "turnover_cost": 5.0
+    },
+    "game": null,
+    "name": "hybrid_supervised",
+    "team": {
+      "method": "blend",
+      "sources": [
+        "supervised"
+      ]
+    }
+  },
+  "config_path": "configs/hybrid_supervised.toml",
+  "csv_sha256": "",
+  "diagnostics": {
+    "fps": 25,
+    "home_share": 0.4016,
+    "label_share_graded": {
+      "A": 0.2955,
+      "D": 0.5062,
+      "H": 0.1983,
+      "X": 0.0
+    },
+    "mean_possession_s": 11.12,
+    "n_frames": 156253,
+    "n_possessions": 277
+  },
+  "external": {
+    "cells": [
+      {
+        "alive_dead_f1": 0.9505,
+        "convention": "pff",
+        "game": "pff-10505",
+        "lost_stoppage_called_live": 0.027,
+        "macroF1": 0.9258,
+        "n_gt_possessions": 256,
+        "n_pred_possessions": 250,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.0,
+        "spellF1": 0.7779,
+        "stoppage_ball_seen": 0.0088,
+        "team_acc_both_alive": 0.9762,
+        "windows": [
+          0.7655,
+          0.8582,
+          0.6595,
+          0.6417,
+          0.8089,
+          0.8107,
+          0.8093,
+          0.8267,
+          0.869,
+          0.728
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9414,
+        "convention": "pff",
+        "game": "pff-10509",
+        "lost_stoppage_called_live": 0.0337,
+        "macroF1": 0.9214,
+        "n_gt_possessions": 255,
+        "n_pred_possessions": 249,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.028,
+        "spellF1": 0.7706,
+        "stoppage_ball_seen": 0.0125,
+        "team_acc_both_alive": 0.9753,
+        "windows": [
+          0.8051,
+          0.7918,
+          0.8615,
+          0.6791,
+          0.6842,
+          0.8245,
+          0.6694,
+          0.7533,
+          0.888,
+          0.7273
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9056,
+        "convention": "pff",
+        "game": "pff-10513",
+        "lost_stoppage_called_live": 0.0302,
+        "macroF1": 0.8842,
+        "n_gt_possessions": 239,
+        "n_pred_possessions": 273,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.5241,
+        "spellF1": 0.6984,
+        "stoppage_ball_seen": 0.0022,
+        "team_acc_both_alive": 0.9734,
+        "windows": [
+          0.8197,
+          0.608,
+          0.6353,
+          0.6545,
+          0.6783,
+          0.6696,
+          0.6866,
+          0.731,
+          0.7704,
+          0.7815,
+          0.4421
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9396,
+        "convention": "pff",
+        "game": "pff-10517",
+        "lost_stoppage_called_live": 0.0401,
+        "macroF1": 0.924,
+        "n_gt_possessions": 309,
+        "n_pred_possessions": 298,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.035,
+        "spellF1": 0.7921,
+        "stoppage_ball_seen": 0.0041,
+        "team_acc_both_alive": 0.9767,
+        "windows": [
+          0.8459,
+          0.7379,
+          0.7385,
+          0.8459,
+          0.7848,
+          0.623,
+          0.8552,
+          0.8167,
+          0.8842,
+          0.8
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9577,
+        "convention": "pff",
+        "game": "pff-3815",
+        "lost_stoppage_called_live": 0.0256,
+        "macroF1": 0.9377,
+        "n_gt_possessions": 302,
+        "n_pred_possessions": 294,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.0188,
+        "spellF1": 0.8168,
+        "stoppage_ball_seen": 0.0208,
+        "team_acc_both_alive": 0.9769,
+        "windows": [
+          0.8929,
+          0.8571,
+          0.8762,
+          0.7592,
+          0.9023,
+          0.8548,
+          0.7254,
+          0.9,
+          0.736,
+          0.6933,
+          0.8
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9568,
+        "convention": "pff",
+        "game": "pff-3819",
+        "lost_stoppage_called_live": 0.0385,
+        "macroF1": 0.9253,
+        "n_gt_possessions": 247,
+        "n_pred_possessions": 256,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.0366,
+        "spellF1": 0.7658,
+        "stoppage_ball_seen": 0.0211,
+        "team_acc_both_alive": 0.9712,
+        "windows": [
+          0.8085,
+          0.8074,
+          0.7324,
+          0.6698,
+          0.8519,
+          0.7188,
+          0.7512,
+          0.8615,
+          0.6917,
+          0.8706
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9591,
+        "convention": "pff",
+        "game": "pff-3823",
+        "lost_stoppage_called_live": 0.0373,
+        "macroF1": 0.9326,
+        "n_gt_possessions": 280,
+        "n_pred_possessions": 270,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.0191,
+        "spellF1": 0.7767,
+        "stoppage_ball_seen": 0.0053,
+        "team_acc_both_alive": 0.9684,
+        "windows": [
+          0.78,
+          0.8478,
+          0.6649,
+          0.7565,
+          0.8627,
+          0.8571,
+          0.6937,
+          0.8271,
+          0.7661,
+          0.7673
+        ]
+      },
+      {
+        "alive_dead_f1": 0.957,
+        "convention": "pff",
+        "game": "pff-3827",
+        "lost_stoppage_called_live": 0.0382,
+        "macroF1": 0.9319,
+        "n_gt_possessions": 269,
+        "n_pred_possessions": 266,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.0,
+        "spellF1": 0.7993,
+        "stoppage_ball_seen": 0.0004,
+        "team_acc_both_alive": 0.974,
+        "windows": [
+          0.8545,
+          0.8582,
+          0.8276,
+          0.8636,
+          0.8875,
+          0.7923,
+          0.8328,
+          0.7698,
+          0.6,
+          0.7569
+        ]
+      },
+      {
+        "alive_dead_f1": 0.949,
+        "convention": "pff",
+        "game": "pff-3831",
+        "lost_stoppage_called_live": 0.0232,
+        "macroF1": 0.9237,
+        "n_gt_possessions": 226,
+        "n_pred_possessions": 254,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.1538,
+        "spellF1": 0.7758,
+        "stoppage_ball_seen": 0.0005,
+        "team_acc_both_alive": 0.9782,
+        "windows": [
+          0.8082,
+          0.717,
+          0.86,
+          0.7091,
+          0.8235,
+          0.7864,
+          0.5286,
+          0.7911,
+          0.9744,
+          0.832
+        ]
+      },
+      {
+        "alive_dead_f1": 0.926,
+        "convention": "pff",
+        "game": "pff-3835",
+        "lost_stoppage_called_live": 0.0314,
+        "macroF1": 0.9017,
+        "n_gt_possessions": 285,
+        "n_pred_possessions": 271,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.325,
+        "spellF1": 0.7317,
+        "stoppage_ball_seen": 0.0017,
+        "team_acc_both_alive": 0.9606,
+        "windows": [
+          0.656,
+          0.6903,
+          0.6667,
+          0.7286,
+          0.7667,
+          0.7586,
+          0.6776,
+          0.825,
+          0.7797,
+          0.7455
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9551,
+        "convention": "pff",
+        "game": "pff-3839",
+        "lost_stoppage_called_live": 0.0209,
+        "macroF1": 0.9265,
+        "n_gt_possessions": 290,
+        "n_pred_possessions": 259,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.034,
+        "spellF1": 0.8131,
+        "stoppage_ball_seen": 0.0077,
+        "team_acc_both_alive": 0.9657,
+        "windows": [
+          0.8508,
+          0.8759,
+          0.8063,
+          0.7933,
+          0.8,
+          0.8828,
+          0.8,
+          0.687,
+          0.8143,
+          0.7925
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9324,
+        "convention": "pff",
+        "game": "pff-3843",
+        "lost_stoppage_called_live": 0.0237,
+        "macroF1": 0.9105,
+        "n_gt_possessions": 326,
+        "n_pred_possessions": 302,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.7198,
+        "spellF1": 0.7841,
+        "stoppage_ball_seen": 0.0069,
+        "team_acc_both_alive": 0.9702,
+        "windows": [
+          0.9195,
+          0.6929,
+          0.8242,
+          0.6638,
+          0.7754,
+          0.8696,
+          0.7789,
+          0.8256,
+          0.6492,
+          0.8604,
+          0.6588
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9434,
+        "convention": "pff",
+        "game": "pff-3847",
+        "lost_stoppage_called_live": 0.0299,
+        "macroF1": 0.9231,
+        "n_gt_possessions": 313,
+        "n_pred_possessions": 293,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.1314,
+        "spellF1": 0.7894,
+        "stoppage_ball_seen": 0.0141,
+        "team_acc_both_alive": 0.9765,
+        "windows": [
+          0.7437,
+          0.8148,
+          0.7571,
+          0.7263,
+          0.8282,
+          0.9231,
+          0.8471,
+          0.7698,
+          0.7163,
+          0.7689
+        ]
+      },
+      {
+        "alive_dead_f1": 0.9147,
+        "convention": "pff",
+        "game": "pff-3851",
+        "lost_stoppage_called_live": 0.0581,
+        "macroF1": 0.8933,
+        "n_gt_possessions": 376,
+        "n_pred_possessions": 370,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.0457,
+        "spellF1": 0.7802,
+        "stoppage_ball_seen": 0.0097,
+        "team_acc_both_alive": 0.9657,
+        "windows": [
+          0.7784,
+          0.7917,
+          0.8667,
+          0.8143,
+          0.8292,
+          0.7852,
+          0.7902,
+          0.6207,
+          0.7355,
+          0.7822
+        ]
+      },
+      {
+        "alive_dead_f1": 0.953,
+        "convention": "pff",
+        "game": "pff-3855",
+        "lost_stoppage_called_live": 0.0168,
+        "macroF1": 0.9207,
+        "n_gt_possessions": 267,
+        "n_pred_possessions": 262,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.7269,
+        "spellF1": 0.8015,
+        "stoppage_ball_seen": 0.0041,
+        "team_acc_both_alive": 0.9725,
+        "windows": [
+          0.8291,
+          0.8133,
+          0.8814,
+          0.7032,
+          0.74,
+          0.8167,
+          0.8929,
+          0.5818,
+          0.8,
+          0.8,
+          0.8973
+        ]
+      },
+      {
+        "alive_dead_f1": 0.8941,
+        "convention": "pff",
+        "game": "pff-3859",
+        "lost_stoppage_called_live": 0.0508,
+        "macroF1": 0.8695,
+        "n_gt_possessions": 275,
+        "n_pred_possessions": 277,
+        "seed": 0,
+        "seen_stoppage_called_live": 0.0235,
+        "spellF1": 0.7022,
+        "stoppage_ball_seen": 0.0155,
+        "team_acc_both_alive": 0.967,
+        "windows": [
+          0.8254,
+          0.6154,
+          0.6138,
+          0.6381,
+          0.7583,
+          0.5231,
+          0.7231,
+          0.7188,
+          0.8186,
+          0.8444,
+          0.6857
+        ]
+      }
+    ],
+    "condition": "pff, each match scored by a model that never saw it",
+    "games": [
+      "pff-10505",
+      "pff-10509",
+      "pff-10513",
+      "pff-10517",
+      "pff-3815",
+      "pff-3819",
+      "pff-3823",
+      "pff-3827",
+      "pff-3831",
+      "pff-3835",
+      "pff-3839",
+      "pff-3843",
+      "pff-3847",
+      "pff-3851",
+      "pff-3855",
+      "pff-3859"
+    ],
+    "macroF1": 0.9157,
+    "profile": null,
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "spellF1": 0.7735,
+    "suite": "pff",
+    "summary": {
+      "by_convention": {
+        "pff": 0.7735
+      },
+      "by_game": {
+        "pff-10505": 0.7779,
+        "pff-10509": 0.7706,
+        "pff-10513": 0.6984,
+        "pff-10517": 0.7921,
+        "pff-3815": 0.8168,
+        "pff-3819": 0.7658,
+        "pff-3823": 0.7767,
+        "pff-3827": 0.7993,
+        "pff-3831": 0.7758,
+        "pff-3835": 0.7317,
+        "pff-3839": 0.8131,
+        "pff-3843": 0.7841,
+        "pff-3847": 0.7894,
+        "pff-3851": 0.7802,
+        "pff-3855": 0.8015,
+        "pff-3859": 0.7022
+      },
+      "by_game_convention": {
+        "pff-10505": {
+          "pff": 0.7779
+        },
+        "pff-10509": {
+          "pff": 0.7706
+        },
+        "pff-10513": {
+          "pff": 0.6984
+        },
+        "pff-10517": {
+          "pff": 0.7921
+        },
+        "pff-3815": {
+          "pff": 0.8168
+        },
+        "pff-3819": {
+          "pff": 0.7658
+        },
+        "pff-3823": {
+          "pff": 0.7767
+        },
+        "pff-3827": {
+          "pff": 0.7993
+        },
+        "pff-3831": {
+          "pff": 0.7758
+        },
+        "pff-3835": {
+          "pff": 0.7317
+        },
+        "pff-3839": {
+          "pff": 0.8131
+        },
+        "pff-3843": {
+          "pff": 0.7841
+        },
+        "pff-3847": {
+          "pff": 0.7894
+        },
+        "pff-3851": {
+          "pff": 0.7802
+        },
+        "pff-3855": {
+          "pff": 0.8015
+        },
+        "pff-3859": {
+          "pff": 0.7022
+        }
+      },
+      "mean": 0.7735,
+      "readings": [
+        "pff"
+      ]
+    }
+  },
+  "git_branch": "task/10-pff",
+  "git_commit": "998d711",
+  "git_dirty": false,
+  "name": "hybrid_supervised",
+  "note": "task 10: the hybrid and the label-free pipeline on the 16 PFF test matches, tracking as delivered",
+  "public_sanity": null,
+  "seconds": 74.2,
+  "time_utc": "2026-11-14T16:04:59Z"
+}

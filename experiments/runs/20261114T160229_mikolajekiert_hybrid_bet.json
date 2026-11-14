@@ -1,0 +1,167 @@
+{
+  "author": "MikolajEkiert",
+  "config": {
+    "ball_state": {
+      "method": "blend",
+      "sources": [
+        {
+          "labels": "tau2",
+          "method": "supervised"
+        },
+        "kickoff_wait"
+      ]
+    },
+    "decode": {
+      "method": "switch_cost",
+      "restart_cost": 20.0,
+      "snap_end_s": 3.0,
+      "snap_start_s": 3.0,
+      "stop_cost": 20.0,
+      "turnover_cost": 8.0
+    },
+    "game": null,
+    "name": "hybrid_bet",
+    "team": {
+      "method": "blend",
+      "sources": [
+        {
+          "labels": "tau2",
+          "method": "supervised"
+        }
+      ]
+    }
+  },
+  "config_path": "configs/hybrid_bet.toml",
+  "csv_sha256": "",
+  "diagnostics": {
+    "fps": 25,
+    "home_share": 0.6171,
+    "label_share_graded": {
+      "A": 0.1966,
+      "D": 0.4864,
+      "H": 0.317,
+      "X": 0.0
+    },
+    "mean_possession_s": 14.63,
+    "n_frames": 199319,
+    "n_possessions": 223
+  },
+  "external": {
+    "decision": {
+      "between_versions": {
+        "ball_missing": 0.4069,
+        "frames_that_differ": 0.0364,
+        "possession_agreement": 0.7809,
+        "team_agreement": 0.96,
+        "team_margin": 0.678
+      },
+      "choose": "first",
+      "conditions": {
+        "footprint: dead share": true,
+        "footprint: possessions per live minute": true,
+        "no evidence scenario loses more than allowed": false,
+        "veto: idsse": true,
+        "veto: pff": false,
+        "weighted mean gain over the evidence": true
+      },
+      "footprint": {
+        "first": {
+          "dead_share": 0.4935,
+          "mean_possession_s": 10.73,
+          "per_live_minute_by_block": {
+            "max": 7.18,
+            "median": 5.57,
+            "min": 4.06
+          },
+          "possessions": 300,
+          "possessions_per_live_minute": 5.59
+        },
+        "second": {
+          "dead_share": 0.4864,
+          "mean_possession_s": 14.63,
+          "per_live_minute_by_block": {
+            "max": 5.93,
+            "median": 4.37,
+            "min": 2.52
+          },
+          "possessions": 223,
+          "possessions_per_live_minute": 4.1
+        }
+      },
+      "profiles": [
+        "label_free",
+        "match_like"
+      ],
+      "public_window_sanity_only": {
+        "first": {
+          "macroF1": 0.8481,
+          "n_gt_possessions": 17,
+          "n_pred_possessions": 16,
+          "note": "public 5 min, 17 possessions: sanity only, never for choosing between versions",
+          "spellF1": 0.5939
+        },
+        "second": {
+          "macroF1": 0.8794,
+          "n_gt_possessions": 17,
+          "n_pred_possessions": 11,
+          "note": "public 5 min, 17 possessions: sanity only, never for choosing between versions",
+          "spellF1": 0.6
+        }
+      },
+      "scenarios": {
+        "label_free/controlled": 0.0416,
+        "label_free/touch": -0.0297,
+        "match_like/controlled": 0.0717,
+        "match_like/touch": 0.0113
+      },
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "unavailable": [],
+      "version_1": "configs/hybrid_supervised.toml",
+      "version_3": "configs/hybrid_bet.toml",
+      "vetoes": {
+        "idsse": {
+          "by_reading": {
+            "controlled1.5": -0.0181,
+            "controlled3.5": 0.0574
+          },
+          "gain": 0.0197,
+          "matches_won": 7,
+          "n_matches": 7,
+          "passes": true
+        },
+        "pff": {
+          "by_reading": {
+            "pff": -0.052
+          },
+          "gain": -0.052,
+          "matches_won": 0,
+          "n_matches": 16,
+          "passes": false
+        }
+      },
+      "weighted_gain": 0.0237,
+      "weighted_gain_interval": [
+        0.0141,
+        0.0354
+      ],
+      "weights": {
+        "controlled": 1.0,
+        "touch": 1.0
+      },
+      "windows_won_share": 0.667,
+      "worst_scenario": -0.0297
+    }
+  },
+  "git_branch": "task/10-pff",
+  "git_commit": "998d711",
+  "git_dirty": false,
+  "name": "hybrid_bet",
+  "note": "task 10: version 1 against version 3 under the rule of docs/FUSION.md section 8",
+  "public_sanity": null,
+  "seconds": 1044.5,
+  "time_utc": "2026-11-14T16:02:29Z"
+}

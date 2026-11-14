@@ -100,8 +100,11 @@ parameter `labels` names the label function the model is trained on.
     full-match baseline scores are reproduced slightly better by `touch`. Which one the ground
     truth follows is unknown, so a change must not lose under either.
   - **Degradation**: a named profile in `configs/degradation/` (see its README). `label_free` is
-    set from label-free aggregates of our tracking; `published_baselines` is fitted so that the
-    organiser baselines score what EVALUATION.md publishes for the full match, and is harsher.
+    set from label-free aggregates of our tracking and is too easy. `match_like` is fitted
+    (`possession calibrate --target match`) so that our two pipelines agree with each other on
+    the degraded matches as they do on the competition match; it is harsher. These two are the
+    evidence. `published_baselines` is fitted to the organisers' published full-match scores,
+    which derive from the private ground truth; it is reported and decides nothing.
     One degraded match serves both label readings; 3 seeds per match.
   - **A second set, `--suite idsse`**: the seven IDSSE matches the supervised model is trained
     on, degraded as for training, each scored by a model trained on the other six
@@ -110,11 +113,23 @@ parameter `labels` names the label function the model is trained on.
     flags are reported only. It is a veto, not evidence (docs/FUSION.md section 8). Every cell
     also reports how true stoppages with the ball in view are labelled, which the Metrica
     matches cannot test.
+  - **A third set, `--suite pff`**: 16 matches of the PFF World Cup 2022 bundle, kept out of
+    every training set by a split fixed before measuring (`supervised.pff_games`), with their
+    tracking as delivered: real broadcast tracking that loses the ball on about 44% of frames,
+    so nothing is simulated. Scored against the provider's own labels. Also a veto. The bundle
+    is free but behind a request form, so this suite runs only where it has been unpacked into
+    `.cache/pff/`.
+  - **Choosing between two versions**: `possession decide V1.toml V3.toml` applies the rule of
+    docs/FUSION.md section 8 (`validation.choose`): differences per evidence scenario, their
+    weighted mean with an interval from resampling (match, 10-minute window) blocks, the two
+    veto sets, and the label-free footprint of both versions on the competition match
+    (`scoring.footprint`). Windows are scored like the public window: the truth is X outside.
   - **Acceptance rule, fixed in advance** (`validation.compare`, printed by `--against`): mean
     spellF1 gain of at least 0.02, no loss under either label reading, and a win on at least two
     of the three matches.
-  - Where it stands: `baseline_smooth50` scores 0.334 under `label_free` and 0.238 under
-    `published_baselines` (0.2433 on the real match). Window 50 beats 125 on the overall mean
+  - Where it stands: `baseline_smooth50` scores 0.334 under `label_free`, 0.213 under
+    `match_like` and 0.238 under `published_baselines` (0.2433 on the real match); the submitted
+    hybrid 0.659, 0.524 and 0.561, and 0.671 on IDSSE and 0.773 on the PFF test matches. Window 50 beats 125 on the overall mean
     under `label_free` and under `touch`, as on the full match; under `controlled` 125 is ahead.
   - Limits: three matches of one provider; the degradation is seeded and parameterised, not
     measured (we cannot know which of our ball gaps are stoppages); the D truth is "no ball in the

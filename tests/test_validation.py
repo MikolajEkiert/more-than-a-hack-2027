@@ -377,3 +377,83 @@ def test_stoppage_context_separates_stoppages_with_the_ball_in_view():
     assert context["lost_stoppage_called_live"] == 0.0
     nothing_dead = validation.stoppage_context(labels, np.full(400, "H"), match)
     assert nothing_dead["stoppage_ball_seen"] is None
+
+
+def test_agreement_statistics_need_no_labels():
+    from possession.pipeline import Result
+
+    match = make_match(n=600, ungraded_head=0)
+    n = match.n_frames
+    labels = np.where(np.arange(n) % 200 < 120, "H", "A")
+    labels[400:500] = "D"
+    p_home = np.where(labels == "H", 0.9, 0.2)
+    a = Result(labels=labels, p_alive=np.where(labels == "D", 0.1, 0.9), p_home=p_home)
+    same = validation.agreement(match, a, a)
+    assert same["possession_agreement"] == 1.0 and same["team_agreement"] == 1.0
+    live = labels != "D"
+    assert same["team_margin"] == pytest.approx(np.mean(np.abs(2 * p_home[live] - 1)), abs=1e-4)
+    assert same["ball_missing"] == pytest.approx(np.mean(~match.ball_seen), abs=1e-4)
+
+    flipped = np.where(labels == "H", "A", np.where(labels == "A", "H", "D"))
+    other = validation.agreement(match, a, Result(labels=flipped, p_alive=a.p_alive, p_home=p_home))
+    assert other["possession_agreement"] == 0.0 and other["team_agreement"] == 0.0
+
+    target = {k: 0.5 for k in validation.AGREEMENT_KEYS}
+    assert validation.agreement_loss(target, target) == 0.0
+    off = {**target, "team_margin": 0.8}
+    assert validation.agreement_loss(off, target) == pytest.approx(0.3 / np.sqrt(3))
+
+
+def test_windows_split_each_half_and_score_like_the_public_window():
+    half = np.zeros(40_000, dtype=np.int8)
+    half[1_000:17_000] = 1  # 16,000 frames: 10 min + 40 s -> one window (the tail joins it)
+    half[20_000:38_000] = 2  # 18,000 frames: 10 min + 2 min -> one window too
+    assert validation.windows(half, fps=25) == [(1_000, 17_000), (20_000, 38_000)]
+    half[20_000:40_000] = 2  # 20,000 frames: 10 min + 3 min 20 s -> still one (under half a window)
+    assert validation.windows(half, fps=25)[-1] == (20_000, 40_000)
+    assert validation.windows(half, fps=25, minutes=5.0)[:2] == [(1_000, 8_500), (8_500, 17_000)]
+
+    truth = np.where(half > 0, "H", "X")
+    truth[5_000:9_000] = "A"
+    perfect = validation.window_scores(truth, truth, half, fps=25, minutes=5.0)
+    assert perfect and all(value == 1.0 for value in perfect)
+    wrong = np.where(half > 0, "D", "X")
+    assert all(value == 0.0 for value in validation.window_scores(wrong, truth, half, 25, 5.0))
+
+
+def test_choice_rule_between_two_versions():
+    def cells(scores, readings=validation.CONVENTIONS, games=("g1", "g2", "g3")):
+        return [
+            {
+                "game": g,
+                "seed": 0,
+                "convention": k,
+                "spellF1": scores[k],
+                "windows": [scores[k]] * 3,
+            }
+            for g in games
+            for k in readings
+        ]
+
+    footprint = {
+        "first": {"possessions_per_live_minute": 5.6, "dead_share": 0.49},
+        "second": {"possessions_per_live_minute": 4.6, "dead_share": 0.48},
+    }
+    first = cells({"touch": 0.60, "controlled": 0.60})
+
+    def verdict(second_scores, **changes):
+        evidence = {"label_free": (first, cells(second_scores))}
+        return validation.choose(
+            evidence, changes.get("vetoes", {}), changes.get("footprint", footprint)
+        )
+
+    good = verdict({"touch": 0.61, "controlled": 0.64})
+    assert good["choose"] == "second" and good["weighted_gain"] == pytest.approx(0.025)
+    assert good["weighted_gain_interval"] == [pytest.approx(0.025)] * 2  # every window the same
+    assert verdict({"touch": 0.61, "controlled": 0.62})["choose"] == "first"  # mean gain 0.015
+    bet = verdict({"touch": 0.57, "controlled": 0.70})  # gains on average, loses 0.03 in one
+    assert bet["choose"] == "first" and bet["worst_scenario"] == pytest.approx(-0.03)
+    assert not bet["conditions"]["no evidence scenario loses more than allowed"]
+
+    dense = {**footprint, "second": {"possessions_per_live_minute": 3.0, "dead_share": 0.48}}
+    assert verdict({"touch": 0.61, "controlled": 0.64}, footprint=dense)["choose"] == "first"

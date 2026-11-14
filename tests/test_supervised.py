@@ -62,19 +62,19 @@ def test_stage_methods_read_the_three_class_probabilities(monkeypatch):
     p[5] = [0.0, 0.0, 1.0]  # certainly dead: the model says nothing about the team
     seen = []
 
-    def probabilities(m, labels="raw"):
-        seen.append(labels)
+    def probabilities(m, labels="raw", data="idsse"):
+        seen.append((labels, data))
         return p
 
     monkeypatch.setattr(supervised, "probabilities", probabilities)
     alive = supervised_ball_state(match)
-    home = supervised_team(match, labels="tau2")
+    home = supervised_team(match, labels="tau2", data="pff")
 
     np.testing.assert_allclose(alive, 1.0 - p[:, 2])
     assert np.isnan(home[5]) and alive[5] == 0.0
     known = ~np.isnan(home)
     np.testing.assert_allclose(home[known], p[known, 0] / (p[known, 0] + p[known, 1]))
-    assert seen == ["raw", "tau2"]  # `labels` reaches the model
+    assert seen == [("raw", "idsse"), ("tau2", "pff")]  # both parameters reach the model
 
 
 def test_hybrid_config_runs_through_the_pipeline():
@@ -136,7 +136,7 @@ def test_a_container_round_trips_through_a_match():
 def test_a_training_match_is_only_ever_scored_out_of_fold(monkeypatch):
     from possession import validation
 
-    def no_model(labels="raw"):
+    def no_model(labels="raw", data="idsse"):
         raise AssertionError("the full model must not be used for a training match")
 
     monkeypatch.setattr(supervised, "model", no_model)
@@ -144,14 +144,14 @@ def test_a_training_match_is_only_ever_scored_out_of_fold(monkeypatch):
     held = supervised.to_match({**supervised.container(base), "name": "IDSSE-TEST_deg0"})
     asked = []
 
-    def out_of_fold(labels="raw"):
-        asked.append(labels)
+    def out_of_fold(labels="raw", data="idsse"):
+        asked.append((labels, data))
         return fake_probabilities(held)
 
     held._cache[supervised.HELD_OUT] = out_of_fold
     np.testing.assert_array_equal(supervised.probabilities(held), fake_probabilities(held))
-    supervised.probabilities(held, "tau2")
-    assert asked == ["raw", "tau2"]  # one out-of-fold prediction per set of training labels
+    supervised.probabilities(held, "tau2", "idsse+pff")
+    assert asked == [("raw", "idsse"), ("tau2", "idsse+pff")]  # one prediction per model variant
 
     bare = supervised.to_match({**supervised.container(base), "name": "IDSSE-TEST_deg0"})
     with pytest.raises(RuntimeError):
@@ -160,3 +160,21 @@ def test_a_training_match_is_only_ever_scored_out_of_fold(monkeypatch):
     degraded = validation.degrade(held, truth, seed=0)  # a copy loses the attached prediction
     with pytest.raises(RuntimeError):
         supervised.probabilities(degraded)
+
+
+def test_pff_matches_are_split_once_and_training_data_is_named(monkeypatch, tmp_path):
+    from solution import pff
+
+    for game_id in range(3812, 3828):  # sixteen converted matches
+        (tmp_path / f"{game_id}.npz").write_bytes(b"")
+    monkeypatch.setattr(pff, "NPZ_DIR", str(tmp_path))
+    supervised.pff_games.cache_clear()
+    try:
+        train, test = supervised.pff_games()
+    finally:
+        supervised.pff_games.cache_clear()
+    assert test == ("3815", "3819", "3823", "3827")  # sorted by id, every fourth
+    assert len(train) == 12 and not set(train) & set(test)
+
+    with pytest.raises(ValueError):
+        supervised.model("raw", "everything")  # training data is one of supervised.DATA

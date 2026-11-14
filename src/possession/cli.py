@@ -3,12 +3,16 @@
     possession methods                     what is already implemented (check before writing code)
     possession run configs/x.toml          produce, validate, diagnose and log one submission
     possession log                         the experiment log as a table
-    possession inspect {ball,players,gaps,tagging,labels} [--game G] [--csv F] [--json]
+    possession inspect {ball,players,gaps,tagging,kickoffs,labels} [--game G] [--csv F] [--json]
                                            aggregate statistics of the data or of a submission
                                            (rates, percentiles, histograms; never rows)
     possession validate CONFIG... [--suite S] [--profile P] [--against CONFIG] [--games a,b]
                                            score configs on other, labelled matches
-    possession calibrate [--write]         fit a degradation profile to the published baselines
+    possession decide V1.toml V3.toml      choose between two versions by the rule fixed in
+                                           docs/FUSION.md section 8 (evidence, vetoes, footprint)
+    possession calibrate [--target match] [--write]
+                                           fit a degradation profile (to label-free statistics
+                                           of the match, or to the published baseline scores)
     possession export [--profile P]        write the validation conditions' tracking to .npz
     possession submit configs/x.toml --team NAME
                                            final file: run twice, require identical bytes,
@@ -223,6 +227,125 @@ def cmd_validate(args) -> int:
     return 0
 
 
+def cmd_decide(args) -> int:
+    """Choose between two versions by the rule of docs/FUSION.md section 8."""
+    from possession import config as config_mod
+    from possession import experiments, loader, pipeline, scoring, validation
+
+    started = time.time()
+    paths = {"first": args.first, "second": args.second}
+    configs = {name: config_mod.load(path) for name, path in paths.items()}
+    seeds = [int(seed) for seed in _csv(args.seeds)]
+    weights = None
+    if args.weights:
+        weights = {k: float(v) for k, v in (item.split("=") for item in _csv(args.weights))}
+    print(f"version 1: {configs['first'].name} ({paths['first']})")
+    print(f"version 3: {configs['second'].name} ({paths['second']})")
+
+    evidence = {}
+    for profile in _csv(args.profiles):
+        evidence[profile] = tuple(
+            _evaluate(paths[name], None, seeds, profile, "metrica")[1] for name in paths
+        )
+    vetoes, unavailable = {}, []
+    for suite in validation.VETO_WINS:
+        try:
+            vetoes[suite] = tuple(
+                _evaluate(paths[name], None, seeds, None, suite)[1] for name in paths
+            )
+        except FileNotFoundError as error:
+            unavailable.append(f"{suite}: {error}")
+
+    match = loader.load_match(verbose=False)
+    results = {name: pipeline.run(cfg, match) for name, cfg in configs.items()}
+    footprint = {n: scoring.footprint(r.labels, match.half, match.fps) for n, r in results.items()}
+    between = validation.agreement(match, results["first"], results["second"])
+    graded = match.graded
+    changed = float((results["first"].labels[graded] != results["second"].labels[graded]).mean())
+    sanity = {n: scoring.public_sanity(r.labels, match.game) for n, r in results.items()}
+
+    verdict = validation.choose(evidence, vetoes, footprint, weights)
+    if unavailable:
+        verdict["choose"] = "first"
+        verdict["conditions"].update(
+            {f"veto set available: {u.split(':')[0]}": False for u in unavailable}
+        )
+
+    print("\nevidence, Metrica matches: spellF1 of version 3 minus version 1")
+    for scenario, value in verdict["scenarios"].items():
+        print(f"  {scenario:<34} {value:+.4f}")
+    interval = verdict["weighted_gain_interval"]
+    print(
+        f"  weighted mean {verdict['weighted_gain']:+.4f}"
+        + (
+            f"   5-95% over (match, window) blocks [{interval[0]:+.4f}, {interval[1]:+.4f}]"
+            if interval
+            else ""
+        )
+        + f"   windows won {verdict['windows_won_share']}   weights {verdict['weights']}"
+    )
+    print("veto sets:")
+    for suite, v in verdict["vetoes"].items():
+        print(
+            f"  {suite:<6} gain {v['gain']:+.4f}  by reading {v['by_reading']}"
+            f"  matches won {v['matches_won']}/{v['n_matches']}"
+            f"  -> {'passes' if v['passes'] else 'VETO'}"
+        )
+    for line in unavailable:
+        print(f"  not available: {line}")
+    print("competition match, no labels:            version 1   version 3")
+    for key in ("possessions", "possessions_per_live_minute", "mean_possession_s", "dead_share"):
+        print(f"  {key:<38} {footprint['first'][key]:>9}   {footprint['second'][key]:>9}")
+    blocks = {n: footprint[n]["per_live_minute_by_block"] for n in footprint}
+    print(f"  per live minute by 10-minute block       {blocks['first']}   {blocks['second']}")
+    print(
+        f"  frames that differ {changed:.2%}; possessions of one scored against the other"
+        f" {between['possession_agreement']}; same team where both say play"
+        f" {between['team_agreement']}"
+    )
+    if all(sanity.values()):
+        print(
+            "  public window, sanity only (not part of the rule): "
+            + ", ".join(
+                f"{label} {sanity[n]['spellF1']} ({sanity[n]['n_pred_possessions']} vs"
+                f" {sanity[n]['n_gt_possessions']} possessions)"
+                for n, label in (("first", "version 1"), ("second", "version 3"))
+            )
+        )
+    print("conditions for version 3:")
+    for name, holds in verdict["conditions"].items():
+        print(f"  [{'x' if holds else ' '}] {name}")
+    chosen = "version 3" if verdict["choose"] == "second" else "version 1"
+    print(f"verdict: {chosen} ({configs[verdict['choose']].name})")
+
+    if not args.no_log:
+        external = {
+            "decision": {
+                **verdict,
+                "version_1": paths["first"],
+                "version_3": paths["second"],
+                "profiles": list(evidence),
+                "seeds": seeds,
+                "footprint": footprint,
+                "between_versions": {**between, "frames_that_differ": round(changed, 4)},
+                "public_window_sanity_only": sanity,
+                "unavailable": unavailable,
+            }
+        }
+        diag = scoring.diagnostics(results["second"].labels, match.half, match.fps)
+        path = experiments.record(
+            configs["second"],
+            "",
+            diag,
+            None,
+            time.time() - started,
+            note=args.note or "",
+            external=external,
+        )
+        print(f"logged {_rel(path)}")
+    return 0
+
+
 def cmd_export(args) -> int:
     """Write every validation condition's tracking to .npz, for a model that lives elsewhere."""
     import numpy as np
@@ -250,10 +373,66 @@ def cmd_export(args) -> int:
     return 0
 
 
+def _calibrate_to_match(args) -> int:
+    """Fit the profile `match_like` to label-free statistics of the competition match."""
+    from possession import config as config_mod
+    from possession import loader, pipeline, validation
+
+    config_a, config_b = args.configs.split(",")
+    games = _csv(args.games) if args.games else list(validation.GAMES)
+    seeds = [int(seed) for seed in _csv(args.seeds)]
+    match = loader.load_match(verbose=False)
+    target = validation.agreement(
+        match,
+        pipeline.run(config_mod.load(config_a), match),
+        pipeline.run(config_mod.load(config_b), match),
+    )
+    print(f"competition match, no labels ({config_a} against {config_b}): {target}")
+
+    def progress(row):
+        stats = {k: row[k] for k in (*validation.AGREEMENT_KEYS, "ball_missing")}
+        print(f"  loss {row['loss']:.4f}  {stats}  {row['overrides']}", flush=True)
+
+    rows = validation.calibrate_to_match(
+        config_a, config_b, target, games, seeds, processes=args.processes, progress=progress
+    )
+    best = rows[0]
+    print(f"best: loss {best['loss']}  {best['overrides']}")
+    for name in ("label_free", "published_baselines"):
+        params = validation.degradation_profile(name)
+        near = [r for r in rows if all(params[k] == v for k, v in r["overrides"].items())]
+        if near:
+            print(f"for comparison, the grid point of {name}: loss {near[0]['loss']}")
+    if args.write:
+        params = {**validation.degradation_profile("label_free"), **best["overrides"]}
+        evidence = {
+            "games": games,
+            "seeds": seeds,
+            "configs": [config_a, config_b],
+            "target_competition_match": target,
+            "fitted": {k: v for k, v in best.items() if k != "overrides"},
+            "grid": {k: list(v) for k, v in validation.MATCH_GRID.items()},
+            "runners_up": [{"loss": r["loss"], "overrides": r["overrides"]} for r in rows[1:4]],
+        }
+        source = (
+            "Fitted by `possession calibrate --target match` so that three label-free statistics"
+            " of our two pipelines on the degraded external matches equal the same statistics on"
+            " the competition match: how often they agree on possessions, how often on the team,"
+            " and how sure the team evidence is. Uses no label of the match and no published"
+            " score."
+        )
+        path = validation.write_profile("match_like", params, source, evidence)
+        print(f"wrote {_rel(path)}")
+    return 0
+
+
 def cmd_calibrate(args) -> int:
-    """Fit a degradation profile to the organisers' published full-match baseline scores."""
+    """Fit a degradation profile: to label-free statistics of the match, or to the organisers'
+    published full-match baseline scores."""
     from possession import validation
 
+    if args.target == "match":
+        return _calibrate_to_match(args)
     games = _csv(args.games) if args.games else list(validation.GAMES)
     seeds = [int(seed) for seed in _csv(args.seeds)]
     base = validation.baseline_residual(games, seeds, profile="label_free")
@@ -353,12 +532,22 @@ def main(argv=None) -> int:
     p.add_argument("--games", default="", help="comma-separated; default: all external matches")
     p.add_argument("--seeds", default="0,1,2", help="seeds of the degradation")
     p.add_argument("--profile", default="label_free", help="a name in configs/degradation/")
-    p.add_argument("--suite", default="metrica", choices=["metrica", "idsse"], help="which set")
+    p.add_argument("--suite", default="metrica", choices=["metrica", "idsse", "pff"])
     p.add_argument("--clean", action="store_true", help="do not degrade the tracking")
     p.add_argument("--against", help="config to compare with under the acceptance rule")
     p.add_argument("--note", default="")
     p.add_argument("--no-log", action="store_true")
     p.set_defaults(fn=cmd_validate)
+
+    p = sub.add_parser("decide", help="choose between two versions (docs/FUSION.md section 8)")
+    p.add_argument("first", help="version 1: the cautious configuration")
+    p.add_argument("second", help="version 3: the bet")
+    p.add_argument("--profiles", default="label_free,match_like", help="evidence profiles")
+    p.add_argument("--seeds", default="0,1,2")
+    p.add_argument("--weights", default="", help="e.g. touch=0.5,controlled=0.5 (the default)")
+    p.add_argument("--note", default="")
+    p.add_argument("--no-log", action="store_true")
+    p.set_defaults(fn=cmd_decide)
 
     p = sub.add_parser("export", help="write the validation conditions' tracking to .npz")
     p.add_argument("--out", default=str(REPO_ROOT / ".cache" / "exports"))
@@ -368,7 +557,14 @@ def main(argv=None) -> int:
     p.add_argument("--clean", action="store_true")
     p.set_defaults(fn=cmd_export)
 
-    p = sub.add_parser("calibrate", help="fit a degradation profile to the published baselines")
+    p = sub.add_parser("calibrate", help="fit a degradation profile")
+    p.add_argument("--target", default="published", choices=["published", "match"])
+    p.add_argument(
+        "--configs",
+        default="configs/hybrid_supervised.toml,configs/unsup_v2.toml",
+        help="target match: the two configs whose agreement is matched",
+    )
+    p.add_argument("--processes", type=int, default=4)
     p.add_argument("--games", default="")
     p.add_argument("--seeds", default="0,1")
     p.add_argument("--write", action="store_true", help="write configs/degradation/")
@@ -379,7 +575,7 @@ def main(argv=None) -> int:
     p.set_defaults(fn=cmd_log)
 
     p = sub.add_parser("inspect", help="aggregate statistics of the data (never prints rows)")
-    p.add_argument("topic", choices=["ball", "players", "gaps", "tagging", "labels"])
+    p.add_argument("topic", choices=["ball", "players", "gaps", "tagging", "kickoffs", "labels"])
     p.add_argument("--game", default=None, help="default: games.GAME")
     p.add_argument("--csv", help="submission CSV (topic labels)")
     p.add_argument("--json", action="store_true")

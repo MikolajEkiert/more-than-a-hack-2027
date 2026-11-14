@@ -47,6 +47,38 @@ def diagnostics(labels: np.ndarray, half: np.ndarray, fps: int) -> dict:
     }
 
 
+def footprint(labels: np.ndarray, half: np.ndarray, fps: int, minutes: float = 10.0) -> dict:
+    """What a version does on a match, in aggregates only: how many possessions, how long, how
+    much dead ball, and how even that is over consecutive blocks of `minutes`."""
+    base = diagnostics(labels, half, fps)
+    codes = pm.label_codes(labels)
+    live = np.isin(codes, (pm.H, pm.A)) & (half > 0)
+    live_minutes = live.sum() / fps / 60.0
+    per_block = []
+    size = int(round(minutes * 60 * fps))
+    for start, stop in _runs(half > 0):
+        for a in range(start, stop, size):
+            b = min(a + size, stop)
+            block_live = live[a:b].sum() / fps / 60.0
+            if b - a < size / 2 or block_live <= 0:
+                continue
+            block = np.full_like(codes, pm.X)
+            block[a:b] = codes[a:b]
+            spells = pm.possession_spells(block, [(a, b)])
+            per_block.append(len(spells) / block_live)
+    return {
+        "possessions": base["n_possessions"],
+        "mean_possession_s": base["mean_possession_s"],
+        "dead_share": base["label_share_graded"]["D"],
+        "possessions_per_live_minute": round(base["n_possessions"] / max(live_minutes, 1e-9), 2),
+        "per_live_minute_by_block": {
+            "min": round(float(np.min(per_block)), 2) if per_block else None,
+            "median": round(float(np.median(per_block)), 2) if per_block else None,
+            "max": round(float(np.max(per_block)), 2) if per_block else None,
+        },
+    }
+
+
 def public_sanity(labels: np.ndarray, game: str) -> dict | None:
     """Scores against the public 5-minute window, or None if this game has none."""
     path = GT_DIR / f"{game}_possession_gt_public.csv"

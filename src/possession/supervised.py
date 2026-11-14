@@ -44,6 +44,7 @@ from possession._paths import CACHE_DIR, REPO_ROOT
 from possession.match import Match
 
 IDSSE_DIR = CACHE_DIR / "idsse"
+PFF_DIR = CACHE_DIR / "pff"  # the PFF World Cup 2022 bundle, as unpacked (request form, not open)
 PACKAGE_CACHE_DIR = CACHE_DIR / "solution"
 MODELS_DIR = REPO_ROOT / "models"  # <cache key>.txt.gz, and `sha256` listing each model's hash
 
@@ -55,6 +56,7 @@ def _package():
     are set here, before the import, and nowhere else imports the package.
     """
     os.environ.setdefault("MTAH_IDSSE_DIR", str(IDSSE_DIR))
+    os.environ.setdefault("MTAH_PFF_DIR", str(PFF_DIR))
     os.environ.setdefault("MTAH_CACHE_DIR", str(PACKAGE_CACHE_DIR))
     from solution import degrade, labels, submission
     from solution import features as package_features
@@ -143,47 +145,124 @@ def _setup():
     return params, feature_fn, train_cfg
 
 
+DATA = ("idsse", "idsse+pff", "pff")  # what a model is trained on
+PFF_ONLY_STRIDE = 8  # every 8th frame of 48 matches: about as many rows as the IDSSE model has
+
+
 @cache
-def model(labels: str = "raw"):
+def model(labels: str = "raw", data: str = "idsse"):
     """(booster, feature function) of the package's final configuration, trained on `labels`.
+
+    `data` names the training matches: "idsse" (the seven open matches, the submitted model),
+    "idsse+pff" (plus the PFF training matches, in the package's own proportions: one
+    orientation, one noise draw, every 15th frame) or "pff" (the PFF training matches alone).
+    The PFF test matches (`pff_games`) are never trained on.
 
     If models/ holds the model for exactly this configuration it is loaded. Otherwise the first
     call downloads the open data, degrades and featurises it and trains (minutes); later calls,
     in this process or another, load the cached model.
     """
+    if data not in DATA:
+        raise ValueError(f"unknown training data {data!r}; known: {DATA}")
     _, _, submission, _ = _package()
     if not os.environ.get("MTAH_NO_CACHE"):
         seed_model_cache()
     params, feature_fn, train_cfg = _setup()
+    label_fn = label_function(labels)
+    if data == "pff":
+        return _train_on_pff(feature_fn, label_fn, params, train_cfg), feature_fn
+    extra = _pff_loaders(pff_games()[0]) if data == "idsse+pff" else None
     booster = submission.train_final(
-        feature_fn, label_function(labels), params, log=_log, train_cfg=train_cfg
+        feature_fn, label_fn, params, log=_log, train_cfg=train_cfg, extra=extra
     )
     return booster, feature_fn
 
 
-def probabilities(match: Match, labels: str = "raw") -> np.ndarray:
+def _train_on_pff(feature_fn, label_fn, params, train_cfg):
+    """One model on the PFF training matches alone, built from the package's own pieces."""
+    from solution import cache as package_cache
+    from solution import degrade
+    from solution import evaluate_external as ev
+    from solution import features as package_features
+    from solution import labels as package_labels
+
+    train_ids = pff_games()[0]
+    cfg = dict(ev.DEFAULT_CFG, **(train_cfg or {}))
+
+    def fit():
+        prepared = _prepare_pff(train_ids, feature_fn, label_fn, params)
+        x, y = ev.stack(prepared, stride=PFF_ONLY_STRIDE)
+        weight = ev.stack_weights(prepared, stride=PFF_ONLY_STRIDE, cfg=cfg)
+        return ev.train(x, y, weight=weight if cfg["weights"] else None)
+
+    key = package_cache.digest(
+        "pff-only",
+        package_features.feature_key(feature_fn),
+        package_labels.label_key(label_fn),
+        sorted(dict(degrade.DEFAULTS, **params).items()),
+        package_cache.source(degrade),
+        list(train_ids),
+        ev.LGB_PARAMS,
+        ev.ROUNDS,
+        PFF_ONLY_STRIDE,
+        sorted(cfg.items()),
+    )
+    return package_cache.model(key, fit)
+
+
+def _prepare_pff(ids, feature_fn, label_fn, params):
+    """The package's `prepare` for PFF matches, exactly as `train_final` calls it for them."""
+    from solution import evaluate_external as ev
+
+    return ev.prepare(
+        _pff_loaders(ids),
+        feature_fn,
+        label_fn,
+        seed=0,
+        degrade_params=params,
+        log=lambda text: None,
+        swap=False,
+        light=True,
+    )
+
+
+def probabilities(match: Match, labels: str = "raw", data: str = "idsse") -> np.ndarray:
     """(n, 3) float64: P(H), P(A), P(D) per frame from the supervised model, memoised on `match`.
 
-    A match the model was trained on is never scored by that model. Such a match carries a
-    function under `HELD_OUT` that returns the prediction of a model trained without it
-    (`idsse_conditions`), and that is what is returned, whatever `labels` is asked for. A match
-    named like a training match that has no such function is an error, not a silent leak.
+    A match the model could have been trained on is never scored by a model that saw it. Such a
+    match carries a function under `HELD_OUT` that returns the prediction of a model trained
+    without it (`idsse_conditions`, `pff_conditions`), and that is what is returned, whatever
+    `labels` and `data` are asked for. A match named like a training match that has no such
+    function is an error, not a silent leak.
     """
 
     def compute():
         held_out = match._cache.get(HELD_OUT)
         if held_out is not None:
-            return np.asarray(held_out(labels), dtype=float)
+            return np.asarray(held_out(labels, data), dtype=float)
         if match.game.startswith(TRAINING_PREFIXES):
             raise RuntimeError(
-                f"{match.game} is a training match of the supervised model and has no held-out "
-                "prediction attached; score it through supervised.idsse_conditions"
+                f"{match.game} is named like a training match of the supervised model and has no "
+                "held-out prediction attached; score it through supervised.idsse_conditions or "
+                "supervised.pff_conditions"
             )
-        booster, feature_fn = model(labels)
-        _, _, submission, _ = _package()
-        return np.asarray(submission.predict_match(booster, feature_fn, container(match)), float)
+        return _predict(match, labels, data)
 
-    return features._memo(match, ("supervised", labels), compute)
+    return features._memo(match, ("supervised", labels, data), compute)
+
+
+def _predict(match: Match, labels: str, data: str) -> np.ndarray:
+    """Probabilities of the full model for `match`. The package caches the match's features on
+    disk; with POSSESSION_NO_FEATURE_CACHE set they are computed and thrown away, which is the
+    same numbers (the package rounds features to float16 on every path)."""
+    booster, feature_fn = model(labels, data)
+    _, _, submission, _ = _package()
+    if os.environ.get("POSSESSION_NO_FEATURE_CACHE"):
+        from solution import cache as package_cache
+
+        x = feature_fn(container(match))[0].astype(package_cache.FEATURE_DTYPE)
+        return np.asarray(booster.predict(x), float)
+    return np.asarray(submission.predict_match(booster, feature_fn, container(match)), float)
 
 
 # -- the training matches as a second validation set, each scored by a model that never saw it --
@@ -224,25 +303,44 @@ def to_match(m: dict) -> Match:
 
 
 @cache
-def _leave_one_out(labels: str, seed: int) -> dict:
-    """Every IDSSE match predicted by a model trained on the other six (the package's harness).
+def _leave_one_out(labels: str, seed: int, data: str = "idsse") -> dict:
+    """Every IDSSE match predicted by a model that was not trained on it.
 
-    {"probs": {name: (T, 3)}, "package": {name: codes}}; "package" is the package's own plain
-    Viterbi with the penalties chosen on the other six matches, kept for comparison.
+    "idsse": a model trained on the other six (the package's harness). "idsse+pff": the other
+    six plus the PFF training matches. "pff": the model trained on PFF alone, which has seen no
+    IDSSE match at all. Returns {"probs": {name: (T, 3)}, "package": {name: codes}}; "package"
+    is the package's own plain Viterbi with the penalties chosen on the other six matches, kept
+    for comparison.
     """
+    if data not in DATA:
+        raise ValueError(f"unknown training data {data!r}; known: {DATA}")
     params, feature_fn, train_cfg = _setup()
     from solution import evaluate_external as ev
+    from solution import idsse
 
-    res = ev.run(
-        feature_fn=feature_fn,
-        label_fn=label_function(labels),
-        seed=seed,
-        degrade_params=params,
-        bootstrap=0,
-        log=_log,
-        light=True,
-        train_cfg=train_cfg,
-    )
+    label_fn = label_function(labels)
+    if data == "idsse":
+        res = ev.run(
+            feature_fn=feature_fn,
+            label_fn=label_fn,
+            seed=seed,
+            degrade_params=params,
+            bootstrap=0,
+            log=_log,
+            light=True,
+            train_cfg=train_cfg,
+        )
+    else:
+        prepared = ev.prepare(
+            idsse.load_all(), feature_fn, label_fn, seed=seed, degrade_params=params, log=_log
+        )
+        if data == "pff":
+            booster, _ = model(labels, "pff")
+            probs = [booster.predict(d["X"]) for d in prepared]
+        else:
+            extra = _prepare_pff(pff_games()[0], feature_fn, label_fn, params)
+            probs = ev.oof_with_extra(prepared, extra, log=_log, train_cfg=train_cfg)
+        res = ev.score(probs, prepared, bootstrap=0)
     names = [d["m"]["name"] for d in res["data"]]
     return {
         "probs": dict(zip(names, res["probs"], strict=True)),
@@ -284,10 +382,100 @@ def idsse_conditions(seeds=(0, 1), readings=IDSSE_READINGS):
 
 
 def _from_fold(kind: str, name: str, seed: int, letters=None):
-    """labels -> the out-of-fold result of `kind` for the match `name` under `seed`."""
+    """(labels, data) -> the out-of-fold result of `kind` for the match `name` under `seed`."""
 
-    def get(labels: str = "raw"):
-        value = _leave_one_out(labels, seed)[kind][name]
+    def get(labels: str = "raw", data: str = "idsse"):
+        value = _leave_one_out(labels, seed, data)[kind][name]
         return value if letters is None else letters[np.asarray(value)].astype("<U1")
+
+    return get
+
+
+# -- PFF World Cup 2022: more training matches, and a test set with real tracking noise --------
+
+PFF_READINGS = ("pff",)  # the provider's own labels: the owner changes at recorded on-ball events
+
+
+def convert_pff(processes: int = 4) -> int:
+    """Convert every PFF match under `PFF_DIR` to a container (the package's code, in parallel).
+
+    Returns the number of converted matches. Raises if the bundle is not there: it is free but
+    behind the provider's request form, so it cannot be downloaded by this code.
+    """
+    _package()
+    from multiprocessing import Pool
+
+    from solution import pff
+
+    games = pff.find_games()
+    if not games:
+        raise FileNotFoundError(
+            f"no PFF matches under {pff.RAW_DIR}; request the bundle at "
+            "https://www.blog.fc.pff.com/blog/enhanced-2022-world-cup-dataset and unpack it there"
+        )
+    os.makedirs(pff.NPZ_DIR, exist_ok=True)
+    todo = [g for g in sorted(games) if not os.path.isfile(os.path.join(pff.NPZ_DIR, g + ".npz"))]
+    if todo:
+        with Pool(processes) as pool:
+            pool.map(_convert_pff_game, todo, chunksize=1)
+    return len(games)
+
+
+def _convert_pff_game(game_id: str) -> None:
+    _package()
+    from solution import container as package_container
+    from solution import pff
+
+    match = pff.build_container(pff.find_games()[game_id])
+    package_container.save(match, os.path.join(pff.NPZ_DIR, game_id + ".npz"))
+
+
+@cache
+def pff_games() -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """(training ids, test ids) of the PFF matches, fixed before anything was measured on them:
+    sorted by id, every fourth match is a test match (16 of 64), the rest are for training."""
+    _package()
+    from solution import pff
+
+    ids = sorted(path.stem for path in Path(pff.NPZ_DIR).glob("*.npz"))
+    if not ids:
+        raise FileNotFoundError(
+            f"no converted PFF matches in {pff.NPZ_DIR}; run supervised.convert_pff() first"
+        )
+    test = tuple(ids[3::4])
+    return tuple(g for g in ids if g not in test), test
+
+
+def _pff_loaders(ids) -> list:
+    """One zero-argument loader per match: 64 containers do not fit in memory at once."""
+    _package()
+    from solution import container as package_container
+    from solution import pff
+
+    paths = [os.path.join(pff.NPZ_DIR, g + ".npz") for g in ids]
+    return [(lambda path=path: package_container.load(path)) for path in paths]
+
+
+def pff_conditions(readings=PFF_READINGS):
+    """Yield (game, seed, match, {reading: labels}) for the 16 PFF test matches.
+
+    The tracking is used as delivered: it is broadcast tracking that already loses the ball on
+    about four frames in ten, so nothing is simulated. No model is ever trained on these
+    matches; the function attached to each match builds the prediction from the model asked for.
+    """
+    letters = np.array(pm.LABELS)
+    for game_id, load in zip(pff_games()[1], _pff_loaders(pff_games()[1]), strict=True):
+        m = load()
+        match = to_match(m)
+        match._cache[HELD_OUT] = _never_trained_on(match)
+        truths = {r: letters[np.asarray(m["label"])].astype("<U1") for r in readings}
+        yield f"pff-{game_id}", 0, match, truths
+
+
+def _never_trained_on(match: Match):
+    """(labels, data) -> probabilities for a PFF test match, which no model is trained on."""
+
+    def get(labels: str = "raw", data: str = "idsse"):
+        return _predict(match, labels, data)
 
     return get

@@ -539,7 +539,7 @@ def score(predicted: np.ndarray, truth: np.ndarray, bootstrap: int = 0) -> dict:
     return out
 
 
-SUITES = ("metrica", "idsse")
+SUITES = ("metrica", "idsse", "pff")
 
 
 def rule_readings(suite: str = "metrica") -> tuple[str, ...]:
@@ -554,6 +554,10 @@ def rule_readings(suite: str = "metrica") -> tuple[str, ...]:
         from possession import supervised
 
         return supervised.IDSSE_RULE_READINGS
+    if suite == "pff":
+        from possession import supervised
+
+        return supervised.PFF_READINGS
     raise KeyError(f"unknown suite {suite!r}; known: {SUITES}")
 
 
@@ -568,6 +572,8 @@ def conditions(
     "idsse": the seven matches the supervised model is trained on, degraded as for training
     (`profile` does not apply), each scored by a model that never saw it
     (`supervised.idsse_conditions`). Only seeds 0 and 1 exist there.
+    "pff": the 16 PFF matches kept out of every training set, with their tracking as delivered
+    (real broadcast tracking; neither `profile` nor `seeds` applies).
     """
     if suite == "idsse":
         from possession import supervised
@@ -575,6 +581,14 @@ def conditions(
         wanted = None if games is None else {str(g).lower() for g in games}
         seeds = tuple(s for s in seeds if s in (0, 1)) or (0,)
         for game, seed, match, truths in supervised.idsse_conditions(seeds=seeds):
+            if wanted is None or game in wanted:
+                yield game, seed, match, truths
+        return
+    if suite == "pff":
+        from possession import supervised
+
+        wanted = None if games is None else {str(g).lower() for g in games}
+        for game, seed, match, truths in supervised.pff_conditions():
             if wanted is None or game in wanted:
                 yield game, seed, match, truths
         return
@@ -620,8 +634,56 @@ def evaluate(
         labels = run(match)
         for convention, truth in truths.items():
             cell = {"game": game, "seed": seed, "convention": convention}
-            cells.append({**cell, **score(labels, truth), **stoppage_context(labels, truth, match)})
+            cells.append(
+                {
+                    **cell,
+                    **score(labels, truth),
+                    **stoppage_context(labels, truth, match),
+                    "windows": window_scores(labels, truth, match.half, match.fps),
+                }
+            )
     return cells
+
+
+WINDOW_MINUTES = 10.0
+
+
+def windows(half: np.ndarray, fps: int, minutes: float = WINDOW_MINUTES) -> list[tuple[int, int]]:
+    """Consecutive windows of `minutes` inside each half, as (start, stop) frames.
+
+    A last piece shorter than half a window joins the window before it.
+    """
+    size = int(round(minutes * 60 * fps))
+    out = []
+    for number in (1, 2):
+        for start, stop in zip(*runs(half == number), strict=True):
+            edges = [*range(int(start), int(stop), size), int(stop)]
+            if len(edges) > 2 and edges[-1] - edges[-2] < size / 2:
+                edges.pop(-2)
+            out += list(zip(edges[:-1], edges[1:], strict=True))
+    return out
+
+
+def window_scores(
+    predicted: np.ndarray, truth: np.ndarray, half: np.ndarray, fps: int, minutes=WINDOW_MINUTES
+) -> list:
+    """spellF1 of every window, scored the way the public window is: the truth is X outside it.
+
+    The prediction is never recomputed for a window. An entry is None where the truth has no
+    graded frame in the window.
+    """
+    gt, pred = pm.label_codes(truth), pm.label_codes(predicted)
+    out = []
+    for start, stop in windows(half, fps, minutes):
+        masked = np.full_like(gt, pm.X)
+        masked[start:stop] = gt[start:stop]
+        graded = pm.valid_runs(masked)
+        if not graded:
+            out.append(None)
+            continue
+        filled = pm.fill_abstentions(pred, graded)
+        out.append(round(pm.spell_scores(masked, filled, graded)["mean_f1"], 4))
+    return out
 
 
 def summarise(cells: list[dict], key: str = "spellF1", readings=None) -> dict:
@@ -689,6 +751,106 @@ def compare(candidate: list[dict], reference: list[dict], readings=None) -> dict
         "games_won": won,
         "n_games": len(by_game),
         "accepted": bool(accepted),
+    }
+
+
+# -- choosing between two versions (docs/FUSION.md section 8) ----------------------------------
+
+EVIDENCE_MIN_GAIN = 0.02  # weighted mean spellF1 the second version must add over the evidence
+EVIDENCE_MAX_LOSS = 0.02  # it may not lose more than this in any evidence scenario
+VETO_WINS = {"idsse": 5, "pff": 9}  # matches it must win on each veto set (of 7 and of 16)
+FOOTPRINT_PER_LIVE_MINUTE = (3.5, 7.0)  # possessions per live minute on the competition match
+FOOTPRINT_DEAD_SHARE = 0.03  # its dead share may differ from the first version's by this much
+
+
+def _window_differences(first: list[dict], second: list[dict]) -> dict:
+    """{(game, reading, window): mean over seeds of second - first} for cells that carry windows."""
+    pairs: dict = {}
+    for cells, sign in ((first, -1.0), (second, 1.0)):
+        for cell in cells:
+            for index, value in enumerate(cell.get("windows") or ()):
+                if value is not None:
+                    key = (cell["game"], cell["convention"], index)
+                    pairs.setdefault(key, []).append(sign * value)
+    seeds = {(c["game"], c["convention"]): 0 for c in first}
+    for cell in first:
+        seeds[(cell["game"], cell["convention"])] += 1
+    return {k: float(np.sum(v)) / seeds[k[:2]] for k, v in pairs.items()}
+
+
+def choose(evidence: dict, vetoes: dict, footprint: dict, weights: dict | None = None) -> dict:
+    """The rule of docs/FUSION.md section 8, applied to `evaluate` cells of two versions.
+
+    evidence   {profile: (cells of version 1, cells of version 3)} on the Metrica matches
+    vetoes     {suite: (cells of version 1, cells of version 3)} for "idsse" and "pff"
+    footprint  {"first": {...}, "second": {...}} from `scoring.footprint` on the competition match
+    weights    {reading: weight}; default: every reading the same
+    Version 3 ("second") is chosen only if every condition holds; otherwise version 1.
+    """
+    scenarios, by_reading = {}, {}
+    for profile, (first, second) in evidence.items():
+        a, b = summarise(first), summarise(second)
+        for reading, value in a["by_convention"].items():
+            difference = round(b["by_convention"][reading] - value, 4)
+            scenarios[f"{profile}/{reading}"] = difference
+            by_reading.setdefault(reading, []).append(difference)
+    weights = weights or {reading: 1.0 for reading in by_reading}
+    total = sum(weights[reading] for reading in by_reading)
+    weighted = sum(weights[r] * float(np.mean(v)) for r, v in by_reading.items()) / total
+    worst = min(scenarios.values())
+
+    # block bootstrap over (match, 10-minute window), one draw shared by every scenario
+    differences = {p: _window_differences(*pair) for p, pair in evidence.items()}
+    blocks = sorted({(k[0], k[2]) for d in differences.values() for k in d})
+    rng = np.random.default_rng(0)
+    draws = []
+    for _ in range(2000 if blocks else 0):
+        picks = [blocks[i] for i in rng.integers(0, len(blocks), len(blocks))]
+        per_reading = {}
+        for d in differences.values():
+            for reading in by_reading:
+                values = [d[(g, reading, w)] for g, w in picks if (g, reading, w) in d]
+                if values:
+                    per_reading.setdefault(reading, []).append(float(np.mean(values)))
+        draws.append(
+            sum(weights[r] * float(np.mean(v)) for r, v in per_reading.items())
+            / sum(weights[r] for r in per_reading)
+        )
+    every = [v for d in differences.values() for v in d.values()]
+
+    veto = {}
+    for suite, (first, second) in vetoes.items():
+        result = compare(second, first, readings=rule_readings(suite))
+        veto[suite] = {
+            "gain": result["gain"],
+            "by_reading": result["gain_by_convention"],
+            "matches_won": result["games_won"],
+            "n_matches": result["n_games"],
+            "passes": bool(result["gain"] >= 0 and result["games_won"] >= VETO_WINS[suite]),
+        }
+
+    low, high = FOOTPRINT_PER_LIVE_MINUTE
+    density = footprint["second"]["possessions_per_live_minute"]
+    dead_gap = abs(footprint["second"]["dead_share"] - footprint["first"]["dead_share"])
+    conditions_ = {
+        "weighted mean gain over the evidence": weighted >= EVIDENCE_MIN_GAIN,
+        "no evidence scenario loses more than allowed": worst >= -EVIDENCE_MAX_LOSS,
+        **{f"veto: {suite}": v["passes"] for suite, v in veto.items()},
+        "footprint: possessions per live minute": low <= density <= high,
+        "footprint: dead share": dead_gap <= FOOTPRINT_DEAD_SHARE,
+    }
+    return {
+        "scenarios": scenarios,
+        "weights": weights,
+        "weighted_gain": round(weighted, 4),
+        "weighted_gain_interval": (
+            [round(float(v), 4) for v in np.percentile(draws, (5, 95))] if draws else None
+        ),
+        "worst_scenario": round(worst, 4),
+        "windows_won_share": round(float(np.mean(np.array(every) > 0)), 3) if every else None,
+        "vetoes": veto,
+        "conditions": {k: bool(v) for k, v in conditions_.items()},
+        "choose": "second" if all(conditions_.values()) else "first",
     }
 
 
@@ -782,6 +944,104 @@ def calibrate(games=GAMES, seeds=(0, 1), base: str = "label_free", progress=None
                 if progress:
                     progress(rows[-1])
     return sorted(rows, key=lambda row: row["rmse"])
+
+
+# -- calibration against label-free statistics of the competition match ------------------------
+
+# The same parameters as CALIBRATION_GRID, with larger ball offsets: what is fitted here is how
+# hard the evidence is, and the offset is the parameter that drives that.
+MATCH_GRID = {
+    "lost_ball_share": (0.08, 0.15, 0.25, 0.35),
+    "ball_offset_m": (1.0, 1.5, 2.0, 2.5),
+    "visible_dead": CALIBRATION_GRID["visible_dead"],
+}
+AGREEMENT_KEYS = ("possession_agreement", "team_agreement", "team_margin")
+
+
+def agreement(match: Match, a, b) -> dict:
+    """Label-free statistics of two pipelines' results (`pipeline.Result`) on one match.
+
+    possession_agreement  spellF1 of b's labels scored against a's as if those were the truth
+    team_agreement        share of the frames both call play on which they name the same team
+    team_margin           mean |2 p_home - 1| of a's team evidence where a's evidence says play
+    ball_missing          share of graded frames without a ball position (of the tracking alone)
+    The first three say how hard the tracking makes the task for our two tracks; none needs a
+    label, so they can be measured on the competition match and on a degraded external match.
+    """
+    graded = match.graded
+    live_a, live_b = np.isin(a.labels, ("H", "A")), np.isin(b.labels, ("H", "A"))
+    both = graded & live_a & live_b
+    home = np.asarray(a.p_home, dtype=np.float64)
+    sure = graded & (np.asarray(a.p_alive) >= 0.5) & ~np.isnan(home)
+    return {
+        "possession_agreement": score(b.labels, a.labels)["spellF1"],
+        "team_agreement": round(float(np.mean(a.labels[both] == b.labels[both])), 4),
+        "team_margin": round(float(np.mean(np.abs(2.0 * home[sure] - 1.0))), 4),
+        "ball_missing": round(float(np.mean(~match.ball_seen[graded])), 4),
+    }
+
+
+def agreement_loss(stats: dict, target: dict) -> float:
+    """Root mean squared difference over `AGREEMENT_KEYS`."""
+    return float(np.sqrt(np.mean([(stats[k] - target[k]) ** 2 for k in AGREEMENT_KEYS])))
+
+
+def _agreement_job(job) -> dict:
+    """Statistics of one degraded external match (a worker of `calibrate_to_match`)."""
+    import os
+
+    os.environ["POSSESSION_NO_FEATURE_CACHE"] = "1"  # dozens of throw-away matches: no disk cache
+    from possession import config as config_mod
+    from possession import pipeline, stages  # noqa: F401  (importing stages registers methods)
+
+    config_a, config_b, game, seed, base, overrides = job
+    clean, truth = _load(game)[0], load_external(game, "touch")[1]
+    match = degrade(clean, truth, seed=seed, profile=base, **overrides)
+    a = pipeline.run(config_mod.load(config_a), match)
+    b = pipeline.run(config_mod.load(config_b), match)
+    return agreement(match, a, b)
+
+
+def calibrate_to_match(
+    config_a: str,
+    config_b: str,
+    target: dict,
+    games=GAMES,
+    seeds=(0,),
+    base: str = "label_free",
+    processes: int = 1,
+    progress=None,
+) -> list[dict]:
+    """Search `MATCH_GRID` for the degradation under which the two configs agree with each other
+    as they do on the competition match (`target`, from `agreement`); rows sorted best first."""
+    points = [
+        {
+            "lost_ball_share": share,
+            "ball_offset_m": offset,
+            "visible_dead_prob": probability,
+            "visible_dead_s": list(seconds),
+        }
+        for share in MATCH_GRID["lost_ball_share"]
+        for offset in MATCH_GRID["ball_offset_m"]
+        for probability, seconds in MATCH_GRID["visible_dead"]
+    ]
+    conditions_ = [(game, seed) for game in games for seed in seeds]
+    jobs = [(config_a, config_b, g, s, base, point) for point in points for g, s in conditions_]
+    if processes > 1:
+        from multiprocessing import Pool
+
+        with Pool(processes) as pool:
+            results = pool.map(_agreement_job, jobs, chunksize=1)
+    else:
+        results = [_agreement_job(job) for job in jobs]
+    rows = []
+    for index, point in enumerate(points):
+        part = results[index * len(conditions_) : (index + 1) * len(conditions_)]
+        stats = {k: round(float(np.mean([r[k] for r in part])), 4) for k in part[0]}
+        rows.append({"overrides": point, **stats, "loss": round(agreement_loss(stats, target), 4)})
+        if progress:
+            progress(rows[-1])
+    return sorted(rows, key=lambda row: row["loss"])
 
 
 def write_profile(name: str, params: dict, source: str, evidence: dict | None = None) -> Path:
