@@ -24,6 +24,27 @@ everything else equal), although they were fitted to different things. Since 202
 `published_baselines` rests on numbers derived from the private ground truth, so it is printed
 and disclosed and decides nothing.
 
-Each file holds `params` (the keys of `validation.DEGRADATION_KEYS`, all required), `source`
-(where the numbers come from) and, for a fitted profile, `evidence` (the fit: residuals, the
-grid searched, the runners-up). To add a profile, add a file; nothing else needs to change.
+Each file holds `params` (the keys of `validation.DEGRADATION_KEYS`, all required, plus any of
+`validation.OPTIONAL_DEGRADATION_KEYS`), `source` (where the numbers come from) and, for a fitted
+profile, `evidence` (the fit: residuals, the grid searched, the runners-up). To add a profile, add
+a file; nothing else needs to change.
+
+**Optional mechanisms** (task 14). A profile that does not name them degrades exactly as before:
+their default switches them off and they draw from a second random stream, so `label_free`,
+`match_like` and `published_baselines` give byte-identical degraded matches and the same profile
+dicts as before they existed (`tests/test_degrade_mechanisms.py`; the feature cache and the
+regime keys of trained models depend on both).
+
+| key | default | what it does |
+|---|---|---|
+| `lead_in_fraction` | 0.5 | share of the live ball loss placed just before stoppages (the rest in free stretches of `free_gap_s`) |
+| `placed_ball_prob` | 0 | share of restarts before which the ball is in view: first moving in a straight line from where it was last seen to the restart spot for `carried_ball_s`, then lying there for `placed_ball_s`, with tracker noise `placed_jitter_m` |
+| `reacquire_s` | [0, 0] | after the other restarts, how long into play the ball is picked up (it then reappears already moving) |
+
+Why they exist: `scripts/regime_compare.py table` compares the ball regime of every set with the
+competition match through version 1's labels. The match loses the ball on about 8% of play and 75%
+of stoppage time, and keeps it in view across the whole stoppage, often lying still before the
+restart (a third of its stoppages); the older profiles lose it on 15-26% of play and 91-97% of
+stoppage time, only at a stoppage's start, and the 2.0 m offset of `match_like` never lets it lie
+still. `match_regime` is fitted to those statistics plus the agreement of `match_like`
+(`scripts/regime_compare.py fit --write`).

@@ -397,6 +397,17 @@ DEGRADATION_KEYS = (
     "ball_smooth_s",
     "players_visible",
 )
+# Optional mechanisms (task 14), each with the value that switches it off. A profile without one
+# of these keys degrades exactly as before: the neutral value does nothing, and the mechanisms
+# draw their random numbers from a second stream, so the first one is never disturbed.
+OPTIONAL_DEGRADATION_KEYS = {
+    "lead_in_fraction": 0.5,  # share of the live ball loss placed just before stoppages
+    "placed_ball_prob": 0.0,  # share of restarts with the ball in view before them
+    "placed_ball_s": [0.0, 0.0],  # ... lying still at the restart spot for this long
+    "carried_ball_s": [0.0, 0.0],  # ... and before that moving to the spot for this long
+    "placed_jitter_m": 0.0,  # standard deviation of the tracker's noise on that ball
+    "reacquire_s": [0.0, 0.0],  # after the other restarts the ball is picked up this late
+}
 
 
 def degradation_profiles() -> list[str]:
@@ -405,16 +416,54 @@ def degradation_profiles() -> list[str]:
 
 
 def degradation_profile(name: str) -> dict:
-    """The parameters of one named profile (see configs/degradation/README.md)."""
+    """The parameters of one named profile (see configs/degradation/README.md), as written in its
+    file: every key of DEGRADATION_KEYS, plus any of OPTIONAL_DEGRADATION_KEYS it sets."""
     path = PROFILE_DIR / f"{name}.json"
     if not path.is_file():
         raise KeyError(f"unknown degradation profile {name!r}; known: {degradation_profiles()}")
     params = json.loads(path.read_text())["params"]
-    if set(params) != set(DEGRADATION_KEYS):
-        unknown = sorted(set(params) - set(DEGRADATION_KEYS))
-        missing = sorted(set(DEGRADATION_KEYS) - set(params))
+    unknown = sorted(set(params) - set(DEGRADATION_KEYS) - set(OPTIONAL_DEGRADATION_KEYS))
+    missing = sorted(set(DEGRADATION_KEYS) - set(params))
+    if unknown or missing:
         raise ValueError(f"{path.name}: unknown keys {unknown}, missing keys {missing}")
     return params
+
+
+RESTART_STREAM = 1  # the second random stream of `degrade`: np.random.default_rng([seed, 1])
+
+
+def _restart_ball(ball, clean, alive, dead_starts, dead_stops, p: dict, seed: int, fps: int):
+    """Step 2c of `degrade`, in place on `ball`: before `placed_ball_prob` of the restarts the
+    ball is carried to the restart spot and lies there in view; after the others it is picked up
+    `reacquire_s` late. Returns the mask of frames where it is lost for that reason. Draws from
+    its own stream and nothing at all when both mechanisms are off."""
+    n = len(ball)
+    late = np.zeros(n, dtype=bool)
+    if p["placed_ball_prob"] <= 0 and max(p["reacquire_s"]) <= 0:
+        return late
+    rng = np.random.default_rng([seed, RESTART_STREAM])
+    for start, stop in zip(dead_starts.tolist(), dead_stops.tolist(), strict=True):
+        if stop >= n or not alive[stop]:
+            continue  # the half ends: no restart
+        if rng.random() >= p["placed_ball_prob"]:
+            late[stop : stop + int(rng.uniform(*p["reacquire_s"]) * fps)] = True
+            continue
+        spot = ball[stop, :2].copy()  # where play restarts
+        if np.isnan(spot).any():
+            continue
+        still = max(start, stop - int(rng.uniform(*p["placed_ball_s"]) * fps))
+        carry = max(start, still - int(rng.uniform(*p["carried_ball_s"]) * fps))
+        if carry < still:
+            seen = np.flatnonzero(~np.isnan(ball[start:carry, 0]))  # e.g. the ball rolling on
+            origin = ball[start + seen[-1], :2] if len(seen) else clean[max(start - 1, 0), :2]
+            if start == 0 or np.isnan(origin).any():
+                origin = spot
+            share = np.arange(1, still - carry + 1)[:, None] / (still - carry + 1)
+            ball[carry:still, :2] = origin + (spot - origin) * share
+        ball[still:stop, :2] = spot
+        if p["placed_jitter_m"] > 0:
+            ball[carry:stop, :2] += rng.normal(0.0, p["placed_jitter_m"], size=(stop - carry, 2))
+    return late
 
 
 def degrade(
@@ -433,21 +482,29 @@ def degrade(
       * corrected ball tracks change velocity within a frame at every event, an automatic one
         is smoother: a moving average of `ball_smooth_s` over the ball's position blurs kicks
       * tracks drop out until `players_visible` players are visible on average
+    Optional mechanisms (OPTIONAL_DEGRADATION_KEYS; off unless a profile or keyword sets them):
+      * `lead_in_fraction` of the live ball loss goes just before stoppages instead of half
+      * before `placed_ball_prob` of the restarts the ball is in view: for `carried_ball_s` it
+        moves in a straight line from where it was last seen to the restart spot (the ball's
+        first position after the stoppage), then it lies there for `placed_ball_s`, with a
+        tracker noise of `placed_jitter_m`. Clean tracking has no ball during a stoppage, so
+        this is where an automatic tracker that sees a ball being fetched and placed puts it
+      * after the other restarts the ball is picked up only `reacquire_s` into play, so that it
+        reappears already moving
     What it does not reproduce: identity switches, duplicated players, a ball visible but wrong,
     and which moments the real tracker loses (it is not random).
     """
-    unknown = sorted(set(overrides) - set(DEGRADATION_KEYS))
+    allowed = (*DEGRADATION_KEYS, *OPTIONAL_DEGRADATION_KEYS)
+    unknown = sorted(set(overrides) - set(allowed))
     if unknown:
-        raise TypeError(
-            f"degrade() got unknown parameter(s) {unknown}; it takes {DEGRADATION_KEYS}"
-        )
-    p = {**degradation_profile(profile), **overrides}
+        raise TypeError(f"degrade() got unknown parameter(s) {unknown}; it takes {allowed}")
+    p = {**OPTIONAL_DEGRADATION_KEYS, **degradation_profile(profile), **overrides}
     rng = np.random.default_rng(seed)
     n, fps = match.n_frames, match.fps
     ball = match.ball.copy()
     players = match.players.copy()
     alive = np.isin(labels, ("H", "A"))
-    dead_starts, _ = runs(labels == "D")
+    dead_starts, dead_stops = runs(labels == "D")
 
     # 1. the ball stays visible, rolling on, at the start of some stoppages
     for start in dead_starts:
@@ -483,11 +540,15 @@ def degrade(
             total = np.convolve(np.where(tracked, ball[:, axis], 0.0), kernel, mode="same")
             ball[:, axis] = np.where(tracked, total / np.maximum(count, 1.0), np.nan)
 
+    # 2c. (optional) before some restarts the ball is fetched and placed in view; after the
+    # others it is picked up late. Its own random stream: the first one stays as it was.
+    late = _restart_ball(ball, match.ball, alive, dead_starts, dead_stops, p, seed, fps)
+
     # 3. the ball is lost for long stretches of live play
     hidden = np.zeros(n, dtype=bool)
     target = p["lost_ball_share"] * alive.sum()
     for index in rng.permutation(len(dead_starts)):
-        if (hidden & alive).sum() >= target / 2:
+        if (hidden & alive).sum() >= target * p["lead_in_fraction"]:
             break
         start = dead_starts[index]
         hidden[max(start - int(rng.uniform(*p["lead_in_s"]) * fps), 0) : start] = True
@@ -497,7 +558,7 @@ def degrade(
             break
         start = int(rng.choice(alive_frames))
         hidden[start : start + int(rng.uniform(*p["free_gap_s"]) * fps)] = True
-    ball[hidden] = np.nan
+    ball[hidden | late] = np.nan
 
     # 4. tracks drop out
     visible = ~np.isnan(players[:, :, 0])
@@ -999,12 +1060,21 @@ def _agreement_job(job) -> dict:
     from possession import config as config_mod
     from possession import pipeline, stages  # noqa: F401  (importing stages registers methods)
 
-    config_a, config_b, game, seed, base, overrides = job
+    config_a, config_b, game, seed, base, overrides, *vector = job
     clean, truth = _load(game)[0], load_external(game, "touch")[1]
     match = degrade(clean, truth, seed=seed, profile=base, **overrides)
     a = pipeline.run(config_mod.load(config_a), match)
     b = pipeline.run(config_mod.load(config_b), match)
+    if vector and vector[0]:  # the ball regime under config_a's labels as well (task 14)
+        from possession import inspect_data
+
+        return {**inspect_data.regime_vector(match, a.labels), **agreement(match, a, b)}
     return agreement(match, a, b)
+
+
+def _mean_of(values) -> float | None:
+    known = [v for v in values if v is not None]
+    return round(float(np.mean(known)), 4) if known else None
 
 
 def calibrate_to_match(
@@ -1016,36 +1086,55 @@ def calibrate_to_match(
     base: str = "label_free",
     processes: int = 1,
     progress=None,
+    points: list[dict] | None = None,
+    vector: bool = False,
+    loss=None,
 ) -> list[dict]:
     """Search `MATCH_GRID` for the degradation under which the two configs agree with each other
-    as they do on the competition match (`target`, from `agreement`); rows sorted best first."""
-    points = [
-        {
-            "lost_ball_share": share,
-            "ball_offset_m": offset,
-            "visible_dead_prob": probability,
-            "visible_dead_s": list(seconds),
-        }
-        for share in MATCH_GRID["lost_ball_share"]
-        for offset in MATCH_GRID["ball_offset_m"]
-        for probability, seconds in MATCH_GRID["visible_dead"]
-    ]
+    as they do on the competition match (`target`, from `agreement`); rows sorted best first.
+
+    `points` (override dicts on top of `base`) replaces the grid; with `vector` every row also
+    holds the means of `inspect_data.regime_vector` of config_a's labels; `loss(stats, target)`
+    replaces `agreement_loss`. Rows reach `progress` as soon as each point is done.
+    """
+    if points is None:
+        points = [
+            {
+                "lost_ball_share": share,
+                "ball_offset_m": offset,
+                "visible_dead_prob": probability,
+                "visible_dead_s": list(seconds),
+            }
+            for share in MATCH_GRID["lost_ball_share"]
+            for offset in MATCH_GRID["ball_offset_m"]
+            for probability, seconds in MATCH_GRID["visible_dead"]
+        ]
+    loss = loss or agreement_loss
     conditions_ = [(game, seed) for game in games for seed in seeds]
-    jobs = [(config_a, config_b, g, s, base, point) for point in points for g, s in conditions_]
+    jobs = [
+        (config_a, config_b, g, s, base, point, vector) for point in points for g, s in conditions_
+    ]
+    rows, done = [], []
+
+    def collect(results) -> None:
+        for result in results:
+            done.append(result)
+            if len(done) % len(conditions_):
+                continue
+            part = done[-len(conditions_) :]
+            stats = {k: _mean_of([r.get(k) for r in part]) for k in part[0]}
+            point = points[len(rows)]
+            rows.append({"overrides": point, **stats, "loss": round(loss(stats, target), 4)})
+            if progress:
+                progress(rows[-1])
+
     if processes > 1:
         from multiprocessing import Pool
 
         with Pool(processes) as pool:
-            results = pool.map(_agreement_job, jobs, chunksize=1)
+            collect(pool.imap(_agreement_job, jobs, chunksize=1))
     else:
-        results = [_agreement_job(job) for job in jobs]
-    rows = []
-    for index, point in enumerate(points):
-        part = results[index * len(conditions_) : (index + 1) * len(conditions_)]
-        stats = {k: round(float(np.mean([r[k] for r in part])), 4) for k in part[0]}
-        rows.append({"overrides": point, **stats, "loss": round(agreement_loss(stats, target), 4)})
-        if progress:
-            progress(rows[-1])
+        collect(_agreement_job(job) for job in jobs)
     return sorted(rows, key=lambda row: row["loss"])
 
 
