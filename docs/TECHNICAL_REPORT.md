@@ -78,7 +78,7 @@ three matches, and all of that under both noise profiles.
 | Tactical video | no | We built no detector or tracker of our own |
 | Broadcast video and its tracking | no | Not evaluated |
 | Public 5-minute ground truth | check only | Printed next to every run to catch a broken pipeline. With 17 possessions its score has a 5-95% interval of 0.41 to 0.78 for our submission, so it cannot choose between versions and was not used to |
-| Published full-match scores of the four baselines | for one validation profile, until 2026-11-14 | See section 3. Nothing in the submitted configuration was accepted on its strength alone. Disclosure: before 2026-11-14 it tipped one decision, the rejection of adding our label-free evidence to the model's (+0.022 under the easier profile, -0.007 under this one). Since that date the profile decides nothing (docs/FUSION.md section 8), and that addition is measured again under a profile fitted without the ground truth |
+| Published full-match scores of the four baselines | for one validation profile, until 2026-11-14 | See section 3. Nothing in the submitted configuration was accepted on its strength alone. Disclosure: before 2026-11-14 it tipped one decision, the rejection of adding our label-free evidence to the model's (+0.022 under the easier profile, -0.007 under this one). Since that date the profile decides nothing (docs/DECISIONS.md, 2026-11-14, planning), so no allowed profile currently backs that exclusion: under the easier profile alone the gain is +0.022, below the noise band, and the full acceptance rule was not checked there. It stays excluded because the submitted configuration is frozen as the fallback (docs/DECISIONS.md, 2026-11-14, team). Re-measuring it under a profile fitted without the ground truth is planned and not yet done |
 
 Tried and dropped, each measured on other matches: estimating stoppage cues from the match itself
 (worse); giving the team of the last touch possession until the next touch (creates false short
@@ -108,9 +108,9 @@ degraded to resemble ours, with three random seeds, under two profiles kept side
   so we state plainly what this profile was used for: until 2026-11-14 it was a second, harsher
   test that a change also had to pass. Everything in the submitted configuration was accepted
   under the easier profile as well. Because the eight numbers derive from the private ground
-  truth, the profile decides nothing since that date (docs/DECISIONS.md, docs/FUSION.md section
-  8): it is only reported, and a profile fitted to label-free statistics of the match takes its
-  place. The one decision it had tipped before, a rejection, is disclosed in section 2.
+  truth, the profile decides nothing since that date (docs/DECISIONS.md, 2026-11-14, planning):
+  it is only reported, and a profile fitted to label-free statistics of the match is to take its
+  place (planned, not yet built). The one decision it had tipped before, a rejection, is disclosed in section 2.
   Label-free statistics of the match (how often our two tracks agree) are closer to this profile
   than to the easier one.
 
