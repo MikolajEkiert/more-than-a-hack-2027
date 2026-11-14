@@ -305,8 +305,8 @@ that costs where the tracking resembles ours. No variant reaches +0.02 on the Me
 none changes version 1. One of them is a bet on the label reading in the sense of section 8
 (IDSSE and PFF at cost 8: it gains under `controlled`, loses under `touch`), but its mean of
 +0.002 is below every comparable member of the family below, so the choice of the version 3
-candidate is the same with or without it. On the PFF matches the submitted model predicts 0.99
-possessions per true one at a cost of 5.
+candidate is the same with or without it. On the PFF matches the submitted model predicts 0.98
+possessions per true one at a cost of 5 (run `20261114T160459*`).
 
 **The version 3 family** (`scripts/variant_grid.py family label_free match_like`). spellF1 minus
 version 1, by scenario; all 18 members are in docs/DECISIONS.md. The members that matter:
