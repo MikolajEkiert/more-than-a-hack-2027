@@ -58,7 +58,11 @@ src/possession/      OUR CODE             configs/          one TOML per experim
   pipeline.py        config + Match -> labels   scoring.py  validation, diagnostics, sanity
   inspect_data.py    aggregate-only data stats   cli.py      `uv run possession ...`
   AGENTS.md          package rules (contract, conventions): read before editing here
+  supervised.py      the only bridge to solution/ (match layout, model, probabilities)
 evaluation/  starter/  games.py   ORGANISER CODE (read-only except games.py)
+solution/  notebooks/            SUPERVISED TRACK'S PACKAGE, merged as written: features + LightGBM
+                                 trained on open data. Its source is hashed into the model cache,
+                                 so an edit there retrains a different model. Not linted.
 scripts/             check_repo.py, agent_hooks.py (hooks for both editors), agent_guard.json
 ```
 

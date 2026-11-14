@@ -12,3 +12,11 @@ reviewer (it is read from that trusted copy, never from the PR under review).
   are low priority while it is off; report only a clear bypass that is new in this PR.
 - **Baseline equivalence on the official data is not verified yet** (tests/test_baseline_equivalence.py
   is skipped until someone runs it with the data). docs/DECISIONS.md says so.
+- **`solution/` and `notebooks/` are the supervised track's package, merged as written** (owner's
+  decision, docs/DECISIONS.md 2026-11-14 task 08). Do not report style, structure, duplication or
+  missing-test findings there. The pipeline calls only its features and model
+  (`src/possession/supervised.py`); its own decoder, command line and kick-off rule, which reads
+  the organisers' published kick-off frame, are not called and are not part of the submission.
+  A correctness bug that changes the submitted file is still worth reporting. **Never edit
+  `solution/` in a fix round**: its source is hashed into the model cache, so an edit retrains a
+  different model and changes the submission; leave such findings to the team.
