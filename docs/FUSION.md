@@ -414,4 +414,5 @@ tracked on PFF; if it does not, only bugs are fixed, nothing is tuned.
   other branch (M1 and M2 run) is not written down further. The references quoted so far are for
   all true stoppages, not for stoppages with a tracked ball (docs/DECISIONS.md, task 11).
 - **G3.** The mechanism check above.
-- **G4.** Task 13's numerical check. Not yet defined; it belongs in task 13's file.
+- **G4.** Task 13's numerical check, defined in `tasks/13-sequence-model.md`: the numpy inference
+  reproduces torch's float64 output on a stored input to 1e-9.
