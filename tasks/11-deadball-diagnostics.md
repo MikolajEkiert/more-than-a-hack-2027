@@ -45,3 +45,9 @@ learned stoppages from where the ball is and how it moves, not from it disappear
   labelled sets; replaced by the running-players statistic before any task 12-13 number existed.
   The match loses the ball almost only in stoppages and keeps it in view in about a quarter of its
   stoppage time: G2 takes the f < 0.5 branch (only the mixed regime member; plain IDSSE veto).
+- 2026-11-14 (review of PR #19): the gates are now written out in docs/FUSION.md section 10, which
+  also says what was fixed before and what during this task. G1 had no threshold written down before
+  measuring: against the noise band (±0.04), Metrica (+0.070, +0.072) and PFF (+0.100) clear it,
+  IDSSE (+0.038) does not. G2 compared the match's tracked-ball stoppages (0.25) with references for
+  all true stoppages; the tracked-ball references (`running_given_true_dead_tracked`,
+  `running_given_true_live_tracked`) are still to be quoted. Added a CLI test for `inspect regime`.

@@ -355,7 +355,11 @@ without any use of the published scores.
 labels. That was one match; over all 64 it is 4.7 (mean possession 13.1 s). The rule itself does
 not depend on the figure.
 
-## 10. Stoppages: training regime, test-time augmentation, a temporal model (rule written on 2026-11-14, before measuring)
+## 10. Stoppages: training regime, test-time augmentation, a temporal model
+
+Written on 2026-11-14. The family and the rule below were fixed before any member was measured.
+The gates were evaluated in task 11, and G2's statistic was replaced during it, after the match's
+moving-ball share had been seen ("The gates", below; docs/DECISIONS.md, task 11).
 
 **Why.** On the 16 PFF test matches, another team's ball-state evidence in place of ours (our team
 evidence and decoder kept) raises spellF1 from 0.773 to 0.80-0.84, and true stoppages with our team
@@ -394,3 +398,20 @@ and M6 exist only if task 13 passes its numerical check (G4).
 
 **Mechanism check, not a decision (G3).** M3 should cut the stoppages it invents with the ball
 tracked on PFF; if it does not, only bugs are fixed, nothing is tuned.
+
+**The gates**, as far as the repository records them:
+
+- **G1 (oracle bound).** spellF1 with the true stoppages as ball-state evidence (the hybrid's own
+  team evidence and decoder, `scripts/deadball_errors.py`) minus the hybrid's, per set. No
+  numerical threshold was written down before measuring. Against the noise band (±0.04): Metrica
+  `label_free` +0.070, `match_like` +0.072 and PFF +0.100 clear it; IDSSE out of fold +0.038 does
+  not.
+- **G2 (regime of the match).** Fixed during task 11, after the planned moving-ball statistic
+  failed to separate true from invented stoppages. Statistic S: the share of frames with running
+  players (90th percentile of their speeds, 1 s mean, at least 2.5 m/s). f = (S_match - S_dead) /
+  (S_live - S_dead), the share of play, with S_dead and S_live from the labelled sets with tracked
+  players (Metrica, IDSSE). f < 0.5: only M3 is run and the IDSSE veto uses plain `idsse`. The
+  other branch (M1 and M2 run) is not written down further. The references quoted so far are for
+  all true stoppages, not for stoppages with a tracked ball (docs/DECISIONS.md, task 11).
+- **G3.** The mechanism check above.
+- **G4.** Task 13's numerical check. Not yet defined; it belongs in task 13's file.

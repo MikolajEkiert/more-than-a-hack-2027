@@ -83,6 +83,30 @@ def test_stage_methods_read_the_three_class_probabilities(monkeypatch):
     ]
 
 
+def test_test_time_augmentation_swaps_home_and_away_back(monkeypatch):
+    match = make_match(n=600)
+    original, swapped = [0.6, 0.3, 0.1], [0.2, 0.7, 0.1]  # P(H), P(A), P(D) of each view
+
+    def feature_fn(view):  # one feature: 1 on the home/away-swapped view, else 0
+        is_swap = float(np.all(view["team"] == 1 - match.team_of_track))
+        return (np.full((len(view["half"]), 1), is_swap),)
+
+    class Booster:
+        def predict(self, x):
+            return np.where(x[:, :1] == 1.0, swapped, original)
+
+    supervised._package()  # the package's storage set up as in production, before its import
+    monkeypatch.setattr(supervised, "model", lambda labels, data, regime: (Booster(), feature_fn))
+    monkeypatch.setenv("POSSESSION_NO_FEATURE_CACHE", "1")
+
+    plain = supervised._predict(match, "raw", "idsse", tta=False)
+    tta = supervised._predict(match, "raw", "idsse", tta=True)
+    np.testing.assert_allclose(plain, np.tile(original, (match.n_frames, 1)))
+    back = np.asarray(swapped)[supervised.SWAP_COLUMNS]  # P(H) of the swapped view is P(A)
+    np.testing.assert_allclose(tta, np.tile((np.asarray(original) + back) / 2, (match.n_frames, 1)))
+    assert np.allclose(tta[:, 0], 0.65) and np.allclose(tta.sum(axis=1), 1.0)
+
+
 def test_hybrid_config_runs_through_the_pipeline():
     match = make_match()
     result = pipeline.run(config_mod.load(CONFIGS_DIR / "hybrid_supervised.toml"), match)

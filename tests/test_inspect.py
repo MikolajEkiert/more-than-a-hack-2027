@@ -134,6 +134,15 @@ def test_cli_inspect_json(monkeypatch, capsys, match):
     assert "tracked_per_frame.p50" in capsys.readouterr().out
 
 
+def test_cli_inspect_regime_json(monkeypatch, capsys, match):
+    monkeypatch.setattr("possession.loader.load_match", lambda game, verbose=True: match)
+    assert cli.main(["inspect", "regime", "--game", "SYNTH", "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert {"pred_dead_share", "running_given_pred_dead_tracked"} <= set(out)
+    for name, value in _rates(out):
+        assert 0 <= value <= 1, name
+
+
 def test_gap_aggregates(match):
     out = inspect_data.gaps(match)
     assert out["long_gaps"]["n"] >= 0
