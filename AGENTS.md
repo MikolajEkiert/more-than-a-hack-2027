@@ -39,11 +39,14 @@ spec. Where a doc and that file disagree, the file is right.
 6. **Do not edit organiser files**: `evaluation/*.py`, `evaluation/gt/`, committed baselines,
    `starter/*.py`. Import them; do not copy them. (Hooks block it; CI checks hashes.) `games.py` may
    be extended, e.g. to add a game.
-7. **Data guard** (`scripts/agent_guard.json`). While it is ON, never read, grep, cat or print the
-   match data, the `.cache/` arrays, submission CSVs or notebook outputs, and never write code
-   whose output shows raw rows. Work through tools that print aggregates (`possession run`,
-   `pytest`). It is OFF while we use the public sample data and goes ON for the official dataset.
-   The terms forbid giving it to a cloud LLM.
+7. **Aggregates only.** The official dataset is in `data/` (since 2026-11-14), and the terms
+   forbid giving it, or extracts of it, to a cloud LLM. So never read, grep, cat or print the
+   match data, the parsed match cache (`.cache/<game>_match.npz`), submission CSVs or notebook
+   outputs, and never write code whose output shows raw rows. Work through tools that print
+   aggregates (`possession run`, `possession inspect`, `pytest`). The technical block for this,
+   the data guard (`scripts/agent_guard.json`), is OFF by the owner's decision
+   (docs/DECISIONS.md, 2026-11-14); the rule holds without it. Open data about other games kept
+   under `.cache/` (`idsse/`, `pff/`, `external/`) is not restricted.
 
 ## 3. Repository map
 
