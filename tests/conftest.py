@@ -48,7 +48,9 @@ def match():
     return make_match()
 
 
-def fake_probabilities(match: Match, labels: str = "raw", data: str = "idsse") -> np.ndarray:
+def fake_probabilities(
+    match: Match, labels: str = "raw", data: str = "idsse", regime: str = "none", tta: bool = False
+) -> np.ndarray:
     """(n, 3) P(H), P(A), P(D) standing in for the supervised model: a deterministic function of
     the tracking (dead where the ball is not tracked, else the team of the nearest player)."""
     from possession import features

@@ -125,18 +125,23 @@ def blend(match: Match, sources: list = ("stoppage_evidence",), weights: list = 
 
 
 @register("ball_state", "supervised")
-def supervised(match: Match, labels: str = "raw", data: str = "idsse") -> np.ndarray:
+def supervised(
+    match: Match, labels: str = "raw", data: str = "idsse", regime: str = "none", tta: bool = False
+) -> np.ndarray:
     """P(play is live) = 1 - P(D) from the supervised model in solution/ (LightGBM, open data).
 
     `labels` names the label function the model is trained on: "raw" (the provider's flags, the
     supervised track's own choice), "tau<s>" or "controlled<s>" (possession/supervised.py).
-    `data` names the training matches: "idsse" (the submitted model), "idsse+pff" or "pff". The
+    `data` names the training matches: "idsse" (the submitted model), "idsse+pff" or "pff".
+    `regime` the ball regime of the training matches (possession/regime.py: "none", "auto_lf",
+    "auto_ml", "mix_lf"); `tta` averages in the prediction with home and away exchanged. The
     first call downloads the open training data and trains the model; it is cached afterwards.
     """
     from possession import fusion
     from possession import supervised as model
 
-    return fusion.class_evidence("ball_state", *model.probabilities(match, labels, data).T)
+    probs = model.probabilities(match, labels, data, regime=regime, tta=tta)
+    return fusion.class_evidence("ball_state", *probs.T)
 
 
 @register("ball_state", "kickoff_wait")

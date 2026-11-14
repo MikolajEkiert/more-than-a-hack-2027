@@ -1,0 +1,20 @@
+# M4 of the family in docs/FUSION.md section 10: version 1 with test-time augmentation. Both
+# stages average the model's prediction with that of the same match with home and away
+# exchanged (columns swapped back); the model was trained on both orientations.
+name = "hybrid_tta"
+
+[ball_state]
+method = "blend"
+sources = [{ method = "supervised", tta = true }, "kickoff_wait"]
+
+[team]
+method = "blend"
+sources = [{ method = "supervised", tta = true }]
+
+[decode]
+method = "switch_cost"
+turnover_cost = 5.0
+stop_cost = 12.0
+restart_cost = 12.0
+snap_start_s = 3.0
+snap_end_s = 3.0
