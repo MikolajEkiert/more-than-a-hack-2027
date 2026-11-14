@@ -78,7 +78,7 @@ three matches, and all of that under both noise profiles.
 | Tactical video | no | We built no detector or tracker of our own |
 | Broadcast video and its tracking | no | Not evaluated |
 | Public 5-minute ground truth | check only | Printed next to every run to catch a broken pipeline. With 17 possessions its score has a 5-95% interval of 0.41 to 0.78 for our submission, so it cannot choose between versions and was not used to |
-| Published full-match scores of the four baselines | for one validation profile | See section 3. Nothing was accepted on its strength alone. It did decide one rejection: adding our label-free evidence to the model's gained 0.022 under the easier profile and was not adopted because it lost 0.007 under this one |
+| Published full-match scores of the four baselines | for one validation profile, until 2026-11-14 | See section 3. Nothing in the submitted configuration was accepted on its strength alone. Disclosure: before 2026-11-14 it tipped one decision, the rejection of adding our label-free evidence to the model's (+0.022 under the easier profile, -0.007 under this one). Since that date the profile decides nothing (docs/FUSION.md section 8), and that addition is measured again under a profile fitted without the ground truth |
 
 Tried and dropped, each measured on other matches: estimating stoppage cues from the match itself
 (worse); giving the team of the last touch possession until the next touch (creates false short
@@ -105,9 +105,12 @@ degraded to resemble ours, with three random seeds, under two profiles kept side
   organisers' baseline scores 0.334 on it against 0.2433 on the real match, so it is too easy.
 - `published_baselines`: fitted so that the four organiser baselines score what EVALUATION.md
   publishes for the full match. Those eight numbers are computed from the private ground truth,
-  so we state plainly what this profile was used for: it is a second, harsher test that a change
-  also had to pass. Everything in the submitted configuration was accepted under the easier
-  profile as well; the one thing this profile decided alone was a rejection (section 2).
+  so we state plainly what this profile was used for: until 2026-11-14 it was a second, harsher
+  test that a change also had to pass. Everything in the submitted configuration was accepted
+  under the easier profile as well. Because the eight numbers derive from the private ground
+  truth, the profile decides nothing since that date (docs/DECISIONS.md, docs/FUSION.md section
+  8): it is only reported, and a profile fitted to label-free statistics of the match takes its
+  place. The one decision it had tipped before, a rejection, is disclosed in section 2.
   Label-free statistics of the match (how often our two tracks agree) are closer to this profile
   than to the easier one.
 
@@ -164,7 +167,10 @@ dead, home share of possession 60%. Run: `experiments/runs/20261114T012451*`.
 
 **Public 5 minutes, as a check only:** `spellF1` 0.594, 16 possessions predicted against 17 true.
 
-**What we expect.** Around the harsher profile's figure, not the easier one. This is a ranking
+**What we expect.** Around the harsher profile's figure, not the easier one. That reading rests
+on label-free statistics of the match, not on how that profile was fitted: our two tracks agree
+with each other at 0.46 on the match, 0.49 under the harsher profile and 0.63 under the easier
+one, and their team agreement is 0.83, 0.82 and 0.89 (docs/DECISIONS.md, 2026-11-14). This is a ranking
 tool between our own versions, not a forecast: the noise is simulated and the reading of the
 labels is unknown.
 
