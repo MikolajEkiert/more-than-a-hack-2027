@@ -29,9 +29,13 @@ sys.path.insert(0, ROOT)
 from solution import container as C  # noqa: E402
 
 # Params
-RAW_DIR = os.path.join(ROOT, "data", "external", "idsse")
+RAW_DIR = os.environ.get("MTAH_IDSSE_DIR") or os.path.join(ROOT, "data", "external", "idsse")
 NPZ_DIR = os.path.join(RAW_DIR, "npz")
-BASE_URL = "https://huggingface.co/datasets/pysport/idsse-data/resolve/main/"
+# One fixed revision of the dataset repository (2026-03-04), not "main": a later change upstream
+# must not change the trained model. idsse.sha256 lists the hash of every file at that revision.
+BASE_URL = ("https://huggingface.co/datasets/pysport/idsse-data/resolve/"
+            "a715a38dfbaf5f58e431727c2b78d174101a703c/")
+HASHES = os.path.join(HERE, "idsse.sha256")  # `shasum -a 256` format: "<sha256>  <file name>"
 MATCHES = {  # match id -> competition id (1 = Bundesliga, 2 = 2. Bundesliga)
     "J03WMX": "DFL-COM-000001", "J03WN1": "DFL-COM-000001",
     "J03WOH": "DFL-COM-000002", "J03WOY": "DFL-COM-000002", "J03WPY": "DFL-COM-000002",
@@ -49,14 +53,39 @@ def filenames(match_id):
     }
 
 
+def sha256(path):
+    import hashlib
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def expected_hashes():
+    with open(HASHES) as handle:
+        return dict(line.split()[::-1] for line in handle if line.strip())
+
+
 def download(match_id, raw_dir=RAW_DIR):
+    """Paths of the match's raw files, downloading what is missing.
+
+    A download lands in "<name>.part" and is renamed only once its hash matches idsse.sha256, so
+    an interrupted or altered download can never be taken for the training data.
+    """
     os.makedirs(raw_dir, exist_ok=True)
     paths = {}
     for kind, name in filenames(match_id).items():
         path = os.path.join(raw_dir, name)
         if not os.path.isfile(path) or os.path.getsize(path) == 0:
             print("  downloading", name)
-            urllib.request.urlretrieve(BASE_URL + name, path)
+            part = path + ".part"
+            urllib.request.urlretrieve(BASE_URL + name, part)
+            if sha256(part) != expected_hashes().get(name):
+                os.remove(part)
+                raise IOError("{}: sha256 differs from solution/idsse.sha256 (incomplete download, "
+                              "or the dataset changed upstream)".format(name))
+            os.replace(part, path)
         paths[kind] = path
     return paths
 
