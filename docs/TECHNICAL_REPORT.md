@@ -164,7 +164,10 @@ dead, home share of possession 60%. Run: `experiments/runs/20261114T012451*`.
 
 **Public 5 minutes, as a check only:** `spellF1` 0.594, 16 possessions predicted against 17 true.
 
-**What we expect.** Around the harsher profile's figure, not the easier one. This is a ranking
+**What we expect.** Around the harsher profile's figure, not the easier one. That reading rests
+on label-free statistics of the match, not on how that profile was fitted: our two tracks agree
+with each other at 0.46 on the match, 0.49 under the harsher profile and 0.63 under the easier
+one, and their team agreement is 0.83, 0.82 and 0.89 (docs/DECISIONS.md, 2026-11-14). This is a ranking
 tool between our own versions, not a forecast: the noise is simulated and the reading of the
 labels is unknown.
 
