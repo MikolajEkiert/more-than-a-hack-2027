@@ -236,3 +236,12 @@ def supervised(
 
     probs = model.probabilities(match, labels, data, regime=regime, tta=tta)
     return fusion.class_evidence("team", *probs.T)
+
+
+@register("team", "sequence")
+def sequence(match: Match) -> np.ndarray:
+    """P(home has the ball | play) from the temporal network's second head (task 13,
+    possession/sequence.py); see `ball_state.sequence`."""
+    from possession import sequence as network
+
+    return network.p_home(match)

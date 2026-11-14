@@ -160,3 +160,13 @@ def kickoff_wait(
     waiting = features.kickoff_wait(match, kickoff_wait_s, kickoff_wait_speed_m_s)
     low = 1.0 / (1.0 + np.exp(-kickoff_llr))
     return np.where(waiting, low, 0.5).astype(np.float32)
+
+
+@register("ball_state", "sequence")
+def sequence(match: Match) -> np.ndarray:
+    """P(play is live) from the temporal network over the package's features (task 13,
+    possession/sequence.py): about 51 s of context on each side, trained in the mixed ball regime
+    chosen in docs/FUSION.md section 10. The committed network is used; nothing is trained here."""
+    from possession import sequence as network
+
+    return network.p_alive(match)

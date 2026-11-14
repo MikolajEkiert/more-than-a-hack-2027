@@ -39,7 +39,7 @@ from pathlib import Path
 import numpy as np
 
 import possession_metrics as pm
-from possession import features
+from possession import features, sequence
 from possession._paths import CACHE_DIR, REPO_ROOT
 from possession.match import Match
 
@@ -314,6 +314,49 @@ def probabilities(
     return features._memo(match, ("supervised", labels, data, regime, tta), compute)
 
 
+def features_of(match: Match) -> np.ndarray:
+    """(T, K) float16: the package's per-frame features of `match` (the final feature set), from
+    the same disk cache as `_predict` (the temporal network of `sequence.py` reads them)."""
+    _, feature_fn, _ = _setup()
+    _package()
+    from solution import cache as package_cache
+    from solution import features as package_features
+
+    m = container(match)
+    if os.environ.get("POSSESSION_NO_FEATURE_CACHE"):
+        return feature_fn(m)[0].astype(package_cache.FEATURE_DTYPE)
+    key = package_cache.digest("match", package_cache.fingerprint(m))
+    return package_features.cached(feature_fn, m, "orig", key)[0]
+
+
+def training_weights(label: np.ndarray) -> np.ndarray:
+    """The package's per-frame sample weights of the final configuration (boundaries and short
+    possessions count more) for a label array in its codes."""
+    _, _, train_cfg = _setup()
+    from solution import evaluate_external as ev
+
+    return ev.sample_weights(np.asarray(label), dict(ev.DEFAULT_CFG, **(train_cfg or {})))
+
+
+def idsse_prepared(labels: str, seed: int, part: str, swap: bool = True) -> list:
+    """The package's prepared IDSSE matches (features of both orientations, labels) of noise seed
+    `seed` in the single ball regime `part` (`possession.regime`)."""
+    from possession import regime as regime_mod
+    from solution import evaluate_external as ev
+    from solution import idsse
+
+    params, feature_fn, _ = _setup()
+    return ev.prepare(
+        regime_mod.regime_inputs(idsse.load_all(), part, seed),
+        feature_fn,
+        label_function(labels),
+        seed=seed,
+        degrade_params=regime_mod.regime_params(params, part, seed),
+        log=_log,
+        swap=swap,
+    )
+
+
 SWAP_COLUMNS = [1, 0, 2]  # P(H), P(A), P(D) of the swapped view back in the original's order
 
 
@@ -566,6 +609,7 @@ def idsse_conditions(seeds=(0, 1), readings=IDSSE_READINGS, input_regime: str = 
             name = str(m["name"])
             match = to_match(m)
             match._cache[HELD_OUT] = _from_fold("probs", name, seed, input_regime=input_regime)
+            match._cache[sequence.HELD_OUT] = sequence.held_out(name, input_regime)
             if input_regime == "plain":
                 match._cache[PACKAGE_LABELS] = _from_fold("package", name, seed, letters)
             truths = {r: letters[np.asarray(label_function(r)(m))].astype("<U1") for r in readings}
@@ -667,6 +711,7 @@ def pff_conditions(readings=PFF_READINGS):
         m = load()
         match = to_match(m)
         match._cache[HELD_OUT] = _never_trained_on(match)
+        match._cache[sequence.HELD_OUT] = sequence.never_trained_on(match)
         truths = {r: letters[np.asarray(m["label"])].astype("<U1") for r in readings}
         yield f"pff-{game_id}", 0, match, truths
 

@@ -1,0 +1,21 @@
+# M5 of the family in docs/FUSION.md section 10: the ball-state evidence of version 1's LightGBM and
+# of the temporal network (possession/sequence.py, trained in the mixed ball regime) at weights 0.5
+# and 0.5, plus the kick-off rule. The team evidence stays that of version 1.
+name = "hybrid_sequence_blend"
+
+[ball_state]
+method = "blend"
+sources = ["supervised", "sequence", "kickoff_wait"]
+weights = [0.5, 0.5, 1.0]
+
+[team]
+method = "blend"
+sources = ["supervised"]
+
+[decode]
+method = "switch_cost"
+turnover_cost = 5.0
+stop_cost = 12.0
+restart_cost = 12.0
+snap_start_s = 3.0
+snap_end_s = 3.0
