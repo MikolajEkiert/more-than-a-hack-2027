@@ -15,6 +15,9 @@
                                            fit a degradation profile (to label-free statistics
                                            of the match, or to the published baseline scores)
     possession export [--profile P]        write the validation conditions' tracking to .npz
+    possession train-sequence [--folds] [--final]
+                                           train the temporal network (needs torch:
+                                           uv run --with torch==2.15.0 possession train-sequence)
     possession submit configs/x.toml --team NAME
                                            final file: run twice, require identical bytes,
                                            validate with the official script, write submission/
@@ -355,6 +358,18 @@ def cmd_decide(args) -> int:
     return 0
 
 
+def cmd_train_sequence(args) -> int:
+    from possession import sequence_train
+
+    if not (args.folds or args.final):
+        raise SystemExit("train-sequence needs --folds and/or --final")
+    if args.folds:
+        sequence_train.folds()
+    if args.final:
+        print(f"wrote {_rel(sequence_train.final())}")
+    return 0
+
+
 def cmd_export(args) -> int:
     """Write every validation condition's tracking to .npz, for a model that lives elsewhere."""
     import numpy as np
@@ -541,7 +556,7 @@ def main(argv=None) -> int:
     p.add_argument("--games", default="", help="comma-separated; default: all external matches")
     p.add_argument("--seeds", default="0,1,2", help="seeds of the degradation")
     p.add_argument("--profile", default="label_free", help="a name in configs/degradation/")
-    p.add_argument("--suite", default="metrica", choices=["metrica", "idsse", "pff"])
+    p.add_argument("--suite", default="metrica", choices=["metrica", "idsse", "idsse_auto", "pff"])
     p.add_argument("--clean", action="store_true", help="do not degrade the tracking")
     p.add_argument("--against", help="config to compare with under the acceptance rule")
     p.add_argument("--note", default="")
@@ -557,6 +572,11 @@ def main(argv=None) -> int:
     p.add_argument("--note", default="")
     p.add_argument("--no-log", action="store_true")
     p.set_defaults(fn=cmd_decide)
+
+    p = sub.add_parser("train-sequence", help="train the temporal network (needs torch)")
+    p.add_argument("--folds", action="store_true", help="out-of-fold IDSSE predictions")
+    p.add_argument("--final", action="store_true", help="the network on all seven matches")
+    p.set_defaults(fn=cmd_train_sequence)
 
     p = sub.add_parser("export", help="write the validation conditions' tracking to .npz")
     p.add_argument("--out", default=str(REPO_ROOT / ".cache" / "exports"))

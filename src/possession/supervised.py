@@ -39,7 +39,7 @@ from pathlib import Path
 import numpy as np
 
 import possession_metrics as pm
-from possession import features
+from possession import features, sequence
 from possession._paths import CACHE_DIR, REPO_ROOT
 from possession.match import Match
 
@@ -150,13 +150,15 @@ PFF_ONLY_STRIDE = 8  # every 8th frame of 48 matches: about as many rows as the 
 
 
 @cache
-def model(labels: str = "raw", data: str = "idsse"):
+def model(labels: str = "raw", data: str = "idsse", regime: str = "none"):
     """(booster, feature function) of the package's final configuration, trained on `labels`.
 
     `data` names the training matches: "idsse" (the seven open matches, the submitted model),
     "idsse+pff" (plus the PFF training matches, in the package's own proportions: one
     orientation, one noise draw, every 15th frame) or "pff" (the PFF training matches alone).
-    The PFF test matches (`pff_games`) are never trained on.
+    The PFF test matches (`pff_games`) are never trained on. `regime` is the ball regime of the
+    training matches (`possession.regime`): "none" is the package's own degradation, the others
+    lose the ball as automatic tracking does (IDSSE only).
 
     If models/ holds the model for exactly this configuration it is loaded. Otherwise the first
     call downloads the open data, degrades and featurises it and trains (minutes); later calls,
@@ -169,6 +171,10 @@ def model(labels: str = "raw", data: str = "idsse"):
         seed_model_cache()
     params, feature_fn, train_cfg = _setup()
     label_fn = label_function(labels)
+    if regime != "none":
+        if data != "idsse":
+            raise ValueError(f"regime {regime!r} is only defined for data='idsse'")
+        return _train_final_regime(feature_fn, label_fn, params, train_cfg, regime), feature_fn
     if data == "pff":
         return _train_on_pff(feature_fn, label_fn, params, train_cfg), feature_fn
     extra = _pff_loaders(pff_games()[0]) if data == "idsse+pff" else None
@@ -210,6 +216,58 @@ def _train_on_pff(feature_fn, label_fn, params, train_cfg):
     return package_cache.model(key, fit)
 
 
+def _train_final_regime(feature_fn, label_fn, params, train_cfg, regime_name):
+    """The package's `train_final` (its seed loop, unchanged) on IDSSE matches whose ball follows
+    `regime_name` (`possession.regime`), cached in the package's cache under its own key."""
+    from possession import regime as regime_mod
+    from solution import cache as package_cache
+    from solution import degrade, idsse
+    from solution import evaluate_external as ev
+    from solution import features as package_features
+    from solution import labels as package_labels
+
+    _, _, submission, _ = _package()
+    seeds = tuple(submission.DEGRADE_SEEDS)
+    cfg = dict(ev.DEFAULT_CFG, **(train_cfg or {}))
+
+    def fit():
+        raws = idsse.load_all()
+        xs, ys, ws = [], [], []
+        for seed in seeds:
+            data = ev.prepare(
+                regime_mod.regime_inputs(raws, regime_name, seed),
+                feature_fn,
+                label_fn,
+                seed=seed,
+                degrade_params=regime_mod.regime_params(params, regime_name, seed),
+                log=_log,
+            )
+            x, y = ev.stack(data)
+            xs.append(x)
+            ys.append(y)
+            ws.append(ev.stack_weights(data, cfg=cfg))
+            del data
+        weight = np.concatenate(ws) if cfg["weights"] else None
+        return ev.train(np.concatenate(xs), np.concatenate(ys), weight=weight)
+
+    key = package_cache.digest(
+        "final-regime",
+        regime_name,
+        regime_mod.regime_key(regime_name),
+        package_features.feature_key(feature_fn),
+        package_labels.label_key(label_fn),
+        sorted(dict(degrade.DEFAULTS, **params).items()),
+        list(seeds),
+        package_cache.source(degrade),
+        sorted(idsse.MATCHES),
+        ev.LGB_PARAMS,
+        ev.ROUNDS,
+        ev.TRAIN_STRIDE,
+        sorted(cfg.items()),
+    )
+    return package_cache.model(key, fit)
+
+
 def _prepare_pff(ids, feature_fn, label_fn, params):
     """The package's `prepare` for PFF matches, exactly as `train_final` calls it for them."""
     from solution import evaluate_external as ev
@@ -226,8 +284,13 @@ def _prepare_pff(ids, feature_fn, label_fn, params):
     )
 
 
-def probabilities(match: Match, labels: str = "raw", data: str = "idsse") -> np.ndarray:
+def probabilities(
+    match: Match, labels: str = "raw", data: str = "idsse", regime: str = "none", tta: bool = False
+) -> np.ndarray:
     """(n, 3) float64: P(H), P(A), P(D) per frame from the supervised model, memoised on `match`.
+
+    `regime` picks the model trained in that ball regime (`model`); `tta` averages the prediction
+    of the match with that of the same match with home and away exchanged (columns swapped back).
 
     A match the model could have been trained on is never scored by a model that saw it. Such a
     match carries a function under `HELD_OUT` that returns the prediction of a model trained
@@ -239,30 +302,91 @@ def probabilities(match: Match, labels: str = "raw", data: str = "idsse") -> np.
     def compute():
         held_out = match._cache.get(HELD_OUT)
         if held_out is not None:
-            return np.asarray(held_out(labels, data), dtype=float)
+            return np.asarray(held_out(labels, data, regime=regime, tta=tta), dtype=float)
         if match.game.startswith(TRAINING_PREFIXES):
             raise RuntimeError(
                 f"{match.game} is named like a training match of the supervised model and has no "
                 "held-out prediction attached; score it through supervised.idsse_conditions or "
                 "supervised.pff_conditions"
             )
-        return _predict(match, labels, data)
+        return _predict(match, labels, data, regime, tta)
 
-    return features._memo(match, ("supervised", labels, data), compute)
+    return features._memo(match, ("supervised", labels, data, regime, tta), compute)
 
 
-def _predict(match: Match, labels: str, data: str) -> np.ndarray:
+def features_of(match: Match) -> np.ndarray:
+    """(T, K) float16: the package's per-frame features of `match` (the final feature set), from
+    the same disk cache as `_predict` (the temporal network of `sequence.py` reads them)."""
+    _, feature_fn, _ = _setup()
+    _package()
+    from solution import cache as package_cache
+    from solution import features as package_features
+
+    m = container(match)
+    if os.environ.get("POSSESSION_NO_FEATURE_CACHE"):
+        return feature_fn(m)[0].astype(package_cache.FEATURE_DTYPE)
+    key = package_cache.digest("match", package_cache.fingerprint(m))
+    return package_features.cached(feature_fn, m, "orig", key)[0]
+
+
+def training_weights(label: np.ndarray) -> np.ndarray:
+    """The package's per-frame sample weights of the final configuration (boundaries and short
+    possessions count more) for a label array in its codes."""
+    _, _, train_cfg = _setup()
+    from solution import evaluate_external as ev
+
+    return ev.sample_weights(np.asarray(label), dict(ev.DEFAULT_CFG, **(train_cfg or {})))
+
+
+def idsse_prepared(labels: str, seed: int, part: str, swap: bool = True) -> list:
+    """The package's prepared IDSSE matches (features of both orientations, labels) of noise seed
+    `seed` in the single ball regime `part` (`possession.regime`)."""
+    from possession import regime as regime_mod
+    from solution import evaluate_external as ev
+    from solution import idsse
+
+    params, feature_fn, _ = _setup()
+    return ev.prepare(
+        regime_mod.regime_inputs(idsse.load_all(), part, seed),
+        feature_fn,
+        label_function(labels),
+        seed=seed,
+        degrade_params=regime_mod.regime_params(params, part, seed),
+        log=_log,
+        swap=swap,
+    )
+
+
+SWAP_COLUMNS = [1, 0, 2]  # P(H), P(A), P(D) of the swapped view back in the original's order
+
+
+def _predict(
+    match: Match, labels: str, data: str, regime: str = "none", tta: bool = False
+) -> np.ndarray:
     """Probabilities of the full model for `match`. The package caches the match's features on
     disk; with POSSESSION_NO_FEATURE_CACHE set they are computed and thrown away, which is the
     same numbers (the package rounds features to float16 on every path)."""
-    booster, feature_fn = model(labels, data)
+    booster, feature_fn = model(labels, data, regime)
     _, _, submission, _ = _package()
-    if os.environ.get("POSSESSION_NO_FEATURE_CACHE"):
-        from solution import cache as package_cache
+    from solution import cache as package_cache
+    from solution import container as package_container
+    from solution import features as package_features
 
-        x = feature_fn(container(match))[0].astype(package_cache.FEATURE_DTYPE)
-        return np.asarray(booster.predict(x), float)
-    return np.asarray(submission.predict_match(booster, feature_fn, container(match)), float)
+    m = container(match)
+    views = [(m, "orig")] + ([(package_container.swap_teams(m), "swap")] if tta else [])
+    out = []
+    for view, tag in views:
+        if os.environ.get("POSSESSION_NO_FEATURE_CACHE"):
+            x = feature_fn(view)[0].astype(package_cache.FEATURE_DTYPE)
+            p = np.asarray(booster.predict(x), float)
+        elif tag == "orig":
+            p = np.asarray(submission.predict_match(booster, feature_fn, view), float)
+        else:
+            key = package_cache.digest("match", package_cache.fingerprint(m))
+            x, _ = package_features.cached(feature_fn, view, tag, key)
+            p = np.asarray(booster.predict(x), float)
+        out.append(p if tag == "orig" else p[:, SWAP_COLUMNS])
+    return np.mean(out, axis=0) if len(out) > 1 else out[0]
 
 
 # -- the training matches as a second validation set, each scored by a model that never saw it --
@@ -348,45 +472,164 @@ def _leave_one_out(labels: str, seed: int, data: str = "idsse") -> dict:
     }
 
 
-def idsse_conditions(seeds=(0, 1), readings=IDSSE_READINGS):
-    """Yield (game, seed, match, {reading: labels}) for the seven IDSSE matches.
+# The IDSSE matches as validation inputs: "plain" is the package's degradation (suite "idsse"),
+# "auto" loses the ball as automatic tracking does, with the profile fitted to the competition
+# match (suite "idsse_auto"; docs/FUSION.md section 10).
+INPUT_REGIMES = {"plain": "none", "auto": "auto_ml"}
 
-    The tracking is degraded exactly as for training (the package's degradation, calibrated on
-    the competition tracking). The labels are derived from the provider's flags, never from the
-    labels a model was trained on. Each match can only be scored out of fold: see `probabilities`.
+
+def _idsse_inputs(raws, input_regime: str, seed: int, feature_fn, label_fn, params, swap=True):
+    """The package's `prepare` of the IDSSE matches under one validation input regime."""
+    from possession import regime as regime_mod
+    from solution import evaluate_external as ev
+
+    name = INPUT_REGIMES[input_regime]
+    return ev.prepare(
+        regime_mod.regime_inputs(raws, name, seed),
+        feature_fn,
+        label_fn,
+        seed=seed,
+        degrade_params=regime_mod.regime_params(params, name, seed),
+        log=_log,
+        swap=swap,
+    )
+
+
+@cache
+def _regime_folds(labels: str, seed: int, regime: str) -> dict:
+    """{(match name, input regime, view): (T, 3)} for every IDSSE match, predicted by a model
+    trained on the other six (noise seed `seed`) in the ball regime `regime`, in both validation
+    input regimes and both views ("orig", and "swap" with home and away exchanged).
+
+    Like the package's harness, a fold uses the copies of one noise seed. A single regime trains
+    on that seed's copies in that regime, every `TRAIN_STRIDE`-th frame: with regime "none" this is
+    exactly the package's harness (`ev.run` keeps no fold models, so they are retrained here with
+    the same `ev.fit` on the same prepared data, and checked bit for bit against `_leave_one_out`).
+    A mixed regime (`regime.MIXED`, half the final model's seeds in each regime) trains on that
+    seed's copies in each of its regimes, every 2 x `TRAIN_STRIDE`-th frame of each: the same
+    number of rows as a single-regime fold, in the final model's proportions.
     """
-    params, feature_fn, _ = _setup()
-    _, labels, _, _ = _package()
+    from possession import regime as regime_mod
+    from solution import cache as package_cache
     from solution import evaluate_external as ev
     from solution import idsse
 
-    letters = np.array(pm.LABELS)
-    for seed in seeds:
-        prepared = ev.prepare(
-            idsse.load_all(),
+    params, feature_fn, train_cfg = _setup()
+    label_fn = label_function(labels)
+    cfg = dict(ev.DEFAULT_CFG, **(train_cfg or {}))
+    raws = idsse.load_all()
+    parts = regime_mod.MIXED.get(regime, (regime,))
+    stride = ev.TRAIN_STRIDE * len(parts)
+    prepared = {}
+    for part in parts:
+        prepared[part] = ev.prepare(
+            regime_mod.regime_inputs(raws, part, seed),
             feature_fn,
-            labels.raw,
+            label_fn,
             seed=seed,
-            degrade_params=params,
-            log=lambda text: None,
-            swap=False,
+            degrade_params=regime_mod.regime_params(params, part, seed),
+            log=_log,
+        )
+    inputs = {
+        name: prepared[INPUT_REGIMES[name]]
+        if INPUT_REGIMES[name] in prepared
+        else _idsse_inputs(raws, name, seed, feature_fn, label_fn, params)
+        for name in INPUT_REGIMES
+    }
+    run_key = package_cache.digest(
+        "fold-regime",
+        regime_mod.regime_key(regime),
+        [[d["key"] for d in prepared[part]] for part in parts],
+        ev.LGB_PARAMS,
+        ev.ROUNDS,
+        stride,
+        sorted(cfg.items()),
+    )
+
+    def fit(k):
+        if len(parts) == 1:
+            return ev.fit(prepared[parts[0]], skip=k, cfg=cfg)
+        xs, ys, ws = [], [], []
+        for part in parts:
+            x, y = ev.stack(prepared[part], skip=k, stride=stride)
+            xs.append(x)
+            ys.append(y)
+            ws.append(ev.stack_weights(prepared[part], skip=k, stride=stride, cfg=cfg))
+        weight = np.concatenate(ws) if cfg["weights"] else None
+        return ev.train(np.concatenate(xs), np.concatenate(ys), weight=weight)
+
+    out = {}
+    for k in range(len(raws)):
+        wanted = [(inp, view) for inp in INPUT_REGIMES for view in ("orig", "swap")]
+        keys = {
+            (inp, view): package_cache.digest(run_key, k, inputs[inp][k]["key"], view)
+            for inp, view in wanted
+        }
+        booster = None
+        if not all(package_cache.exists("folds", key) for key in keys.values()):
+            booster = fit(k)
+            _log(f"fold {k} of regime {regime} (seed {seed}) trained")
+        for (inp, view), key in keys.items():
+            entry = inputs[inp][k]
+            x = entry["X"] if view == "orig" else entry["Xs"]
+            out[(str(entry["m"]["name"]), inp, view)] = package_cache.array(
+                "folds", key, lambda x=x, b=booster: b.predict(x), mmap=False
+            )
+    if regime == "none":  # the same folds as the package's harness, bit for bit, or nothing
+        reference = _leave_one_out(labels, seed)["probs"]
+        for name, probs in reference.items():
+            if not np.array_equal(np.asarray(probs), np.asarray(out[(name, "plain", "orig")])):
+                raise RuntimeError(f"fold loop differs from the package's harness on {name}")
+    return out
+
+
+def idsse_conditions(seeds=(0, 1), readings=IDSSE_READINGS, input_regime: str = "plain"):
+    """Yield (game, seed, match, {reading: labels}) for the seven IDSSE matches.
+
+    The tracking is degraded as for training: the package's degradation, calibrated on the
+    competition tracking ("plain"), or the automatic-tracking ball regime of the profile fitted to
+    the competition match ("auto"; `INPUT_REGIMES`). The labels are derived from the provider's
+    flags, never from the labels a model was trained on. Each match can only be scored out of
+    fold: see `probabilities`.
+    """
+    if input_regime not in INPUT_REGIMES:
+        raise ValueError(f"unknown input regime {input_regime!r}; known: {sorted(INPUT_REGIMES)}")
+    params, feature_fn, _ = _setup()
+    _, labels, _, _ = _package()
+    from solution import idsse
+
+    letters = np.array(pm.LABELS)
+    raws = idsse.load_all()
+    for seed in seeds:
+        prepared = _idsse_inputs(
+            raws, input_regime, seed, feature_fn, labels.raw, params, swap=False
         )
         for entry in prepared:
             m = entry["m"]  # degraded tracking with the provider's own labels
             name = str(m["name"])
             match = to_match(m)
-            match._cache[HELD_OUT] = _from_fold("probs", name, seed)
-            match._cache[PACKAGE_LABELS] = _from_fold("package", name, seed, letters)
+            match._cache[HELD_OUT] = _from_fold("probs", name, seed, input_regime=input_regime)
+            match._cache[sequence.HELD_OUT] = sequence.held_out(name, input_regime)
+            if input_regime == "plain":
+                match._cache[PACKAGE_LABELS] = _from_fold("package", name, seed, letters)
             truths = {r: letters[np.asarray(label_function(r)(m))].astype("<U1") for r in readings}
             yield name.split("_deg")[0].lower(), seed, match, truths
 
 
-def _from_fold(kind: str, name: str, seed: int, letters=None):
-    """(labels, data) -> the out-of-fold result of `kind` for the match `name` under `seed`."""
+def _from_fold(kind: str, name: str, seed: int, letters=None, input_regime: str = "plain"):
+    """(labels, data, regime, tta) -> the out-of-fold result of `kind` for the match `name`."""
 
-    def get(labels: str = "raw", data: str = "idsse"):
-        value = _leave_one_out(labels, seed, data)[kind][name]
-        return value if letters is None else letters[np.asarray(value)].astype("<U1")
+    def get(labels: str = "raw", data: str = "idsse", regime: str = "none", tta: bool = False):
+        if kind == "package" or (input_regime == "plain" and regime == "none" and not tta):
+            value = _leave_one_out(labels, seed, data)[kind][name]
+            return value if letters is None else letters[np.asarray(value)].astype("<U1")
+        if data != "idsse":
+            raise ValueError("ball regimes and test-time augmentation are only for data='idsse'")
+        folds = _regime_folds(labels, seed, regime)
+        p = np.asarray(folds[(name, input_regime, "orig")], float)
+        if tta:
+            p = (p + np.asarray(folds[(name, input_regime, "swap")], float)[:, SWAP_COLUMNS]) / 2
+        return p
 
     return get
 
@@ -468,6 +711,7 @@ def pff_conditions(readings=PFF_READINGS):
         m = load()
         match = to_match(m)
         match._cache[HELD_OUT] = _never_trained_on(match)
+        match._cache[sequence.HELD_OUT] = sequence.never_trained_on(match)
         truths = {r: letters[np.asarray(m["label"])].astype("<U1") for r in readings}
         yield f"pff-{game_id}", 0, match, truths
 
@@ -475,7 +719,7 @@ def pff_conditions(readings=PFF_READINGS):
 def _never_trained_on(match: Match):
     """(labels, data) -> probabilities for a PFF test match, which no model is trained on."""
 
-    def get(labels: str = "raw", data: str = "idsse"):
-        return _predict(match, labels, data)
+    def get(labels: str = "raw", data: str = "idsse", regime: str = "none", tta: bool = False):
+        return _predict(match, labels, data, regime, tta)
 
     return get

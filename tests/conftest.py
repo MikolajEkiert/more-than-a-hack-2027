@@ -48,7 +48,9 @@ def match():
     return make_match()
 
 
-def fake_probabilities(match: Match, labels: str = "raw", data: str = "idsse") -> np.ndarray:
+def fake_probabilities(
+    match: Match, labels: str = "raw", data: str = "idsse", regime: str = "none", tta: bool = False
+) -> np.ndarray:
     """(n, 3) P(H), P(A), P(D) standing in for the supervised model: a deterministic function of
     the tracking (dead where the ball is not tracked, else the team of the nearest player)."""
     from possession import features
@@ -57,6 +59,15 @@ def fake_probabilities(match: Match, labels: str = "raw", data: str = "idsse") -
     p_d = np.where(match.ball_seen, 0.1, 0.8)
     home = np.where(team == HOME, 0.8, 0.2)
     return np.stack([(1 - p_d) * home, (1 - p_d) * (1 - home), p_d], axis=1)
+
+
+def fake_sequence_logits(match: Match) -> np.ndarray:
+    """(n, 2) logits (z_dead, z_home) standing in for the temporal network: the log-odds of
+    `fake_probabilities`, so both learned sources tell the same story in tests."""
+    p = fake_probabilities(match)
+    alive = 1.0 - p[:, 2]
+    home = p[:, 0] / np.maximum(p[:, 0] + p[:, 1], 1e-9)
+    return np.stack([np.log(p[:, 2] / alive), np.log(home / (1.0 - home))], axis=1)
 
 
 @pytest.fixture(autouse=True)
@@ -68,6 +79,7 @@ def stub_supervised_model(request, monkeypatch):
     real one."""
     if request.node.get_closest_marker("needs_model"):
         return
-    from possession import supervised
+    from possession import sequence, supervised
 
     monkeypatch.setattr(supervised, "probabilities", fake_probabilities)
+    monkeypatch.setattr(sequence, "predictions", fake_sequence_logits)

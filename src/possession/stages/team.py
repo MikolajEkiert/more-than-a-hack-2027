@@ -223,13 +223,25 @@ def blend(match: Match, sources: list = ("touch_episodes",), weights: list = ())
 
 
 @register("team", "supervised")
-def supervised(match: Match, labels: str = "raw", data: str = "idsse") -> np.ndarray:
+def supervised(
+    match: Match, labels: str = "raw", data: str = "idsse", regime: str = "none", tta: bool = False
+) -> np.ndarray:
     """P(home has the ball | play) = P(H) / (P(H) + P(A)) from the supervised model in solution/.
 
-    The same model, and the same `labels`, as `ball_state.supervised`; see that method and
+    The same model, and the same parameters, as `ball_state.supervised`; see that method and
     possession/supervised.py.
     """
     from possession import fusion
     from possession import supervised as model
 
-    return fusion.class_evidence("team", *model.probabilities(match, labels, data).T)
+    probs = model.probabilities(match, labels, data, regime=regime, tta=tta)
+    return fusion.class_evidence("team", *probs.T)
+
+
+@register("team", "sequence")
+def sequence(match: Match) -> np.ndarray:
+    """P(home has the ball | play) from the temporal network's second head (task 13,
+    possession/sequence.py); see `ball_state.sequence`."""
+    from possession import sequence as network
+
+    return network.p_home(match)

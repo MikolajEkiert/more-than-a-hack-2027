@@ -62,19 +62,49 @@ def test_stage_methods_read_the_three_class_probabilities(monkeypatch):
     p[5] = [0.0, 0.0, 1.0]  # certainly dead: the model says nothing about the team
     seen = []
 
-    def probabilities(m, labels="raw", data="idsse"):
-        seen.append((labels, data))
+    def probabilities(m, labels="raw", data="idsse", regime="none", tta=False):
+        seen.append((labels, data, regime, tta))
         return p
 
     monkeypatch.setattr(supervised, "probabilities", probabilities)
     alive = supervised_ball_state(match)
     home = supervised_team(match, labels="tau2", data="pff")
+    supervised_ball_state(match, regime="auto_lf", tta=True)
 
     np.testing.assert_allclose(alive, 1.0 - p[:, 2])
     assert np.isnan(home[5]) and alive[5] == 0.0
     known = ~np.isnan(home)
     np.testing.assert_allclose(home[known], p[known, 0] / (p[known, 0] + p[known, 1]))
-    assert seen == [("raw", "idsse"), ("tau2", "pff")]  # both parameters reach the model
+    # every parameter reaches the model
+    assert seen == [
+        ("raw", "idsse", "none", False),
+        ("tau2", "pff", "none", False),
+        ("raw", "idsse", "auto_lf", True),
+    ]
+
+
+def test_test_time_augmentation_swaps_home_and_away_back(monkeypatch):
+    match = make_match(n=600)
+    original, swapped = [0.6, 0.3, 0.1], [0.2, 0.7, 0.1]  # P(H), P(A), P(D) of each view
+
+    def feature_fn(view):  # one feature: 1 on the home/away-swapped view, else 0
+        is_swap = float(np.all(view["team"] == 1 - match.team_of_track))
+        return (np.full((len(view["half"]), 1), is_swap),)
+
+    class Booster:
+        def predict(self, x):
+            return np.where(x[:, :1] == 1.0, swapped, original)
+
+    supervised._package()  # the package's storage set up as in production, before its import
+    monkeypatch.setattr(supervised, "model", lambda labels, data, regime: (Booster(), feature_fn))
+    monkeypatch.setenv("POSSESSION_NO_FEATURE_CACHE", "1")
+
+    plain = supervised._predict(match, "raw", "idsse", tta=False)
+    tta = supervised._predict(match, "raw", "idsse", tta=True)
+    np.testing.assert_allclose(plain, np.tile(original, (match.n_frames, 1)))
+    back = np.asarray(swapped)[supervised.SWAP_COLUMNS]  # P(H) of the swapped view is P(A)
+    np.testing.assert_allclose(tta, np.tile((np.asarray(original) + back) / 2, (match.n_frames, 1)))
+    assert np.allclose(tta[:, 0], 0.65) and np.allclose(tta.sum(axis=1), 1.0)
 
 
 def test_hybrid_config_runs_through_the_pipeline():
@@ -136,7 +166,7 @@ def test_a_container_round_trips_through_a_match():
 def test_a_training_match_is_only_ever_scored_out_of_fold(monkeypatch):
     from possession import validation
 
-    def no_model(labels="raw", data="idsse"):
+    def no_model(labels="raw", data="idsse", regime="none"):
         raise AssertionError("the full model must not be used for a training match")
 
     monkeypatch.setattr(supervised, "model", no_model)
@@ -144,14 +174,20 @@ def test_a_training_match_is_only_ever_scored_out_of_fold(monkeypatch):
     held = supervised.to_match({**supervised.container(base), "name": "IDSSE-TEST_deg0"})
     asked = []
 
-    def out_of_fold(labels="raw", data="idsse"):
-        asked.append((labels, data))
+    def out_of_fold(labels="raw", data="idsse", regime="none", tta=False):
+        asked.append((labels, data, regime, tta))
         return fake_probabilities(held)
 
     held._cache[supervised.HELD_OUT] = out_of_fold
     np.testing.assert_array_equal(supervised.probabilities(held), fake_probabilities(held))
     supervised.probabilities(held, "tau2", "idsse+pff")
-    assert asked == [("raw", "idsse"), ("tau2", "idsse+pff")]  # one prediction per model variant
+    supervised.probabilities(held, regime="auto_ml", tta=True)
+    # one out-of-fold prediction per model variant, never the full model
+    assert asked == [
+        ("raw", "idsse", "none", False),
+        ("tau2", "idsse+pff", "none", False),
+        ("raw", "idsse", "auto_ml", True),
+    ]
 
     bare = supervised.to_match({**supervised.container(base), "name": "IDSSE-TEST_deg0"})
     with pytest.raises(RuntimeError):

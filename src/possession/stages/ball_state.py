@@ -125,18 +125,23 @@ def blend(match: Match, sources: list = ("stoppage_evidence",), weights: list = 
 
 
 @register("ball_state", "supervised")
-def supervised(match: Match, labels: str = "raw", data: str = "idsse") -> np.ndarray:
+def supervised(
+    match: Match, labels: str = "raw", data: str = "idsse", regime: str = "none", tta: bool = False
+) -> np.ndarray:
     """P(play is live) = 1 - P(D) from the supervised model in solution/ (LightGBM, open data).
 
     `labels` names the label function the model is trained on: "raw" (the provider's flags, the
     supervised track's own choice), "tau<s>" or "controlled<s>" (possession/supervised.py).
-    `data` names the training matches: "idsse" (the submitted model), "idsse+pff" or "pff". The
+    `data` names the training matches: "idsse" (the submitted model), "idsse+pff" or "pff".
+    `regime` the ball regime of the training matches (possession/regime.py: "none", "auto_lf",
+    "auto_ml", "mix_lf"); `tta` averages in the prediction with home and away exchanged. The
     first call downloads the open training data and trains the model; it is cached afterwards.
     """
     from possession import fusion
     from possession import supervised as model
 
-    return fusion.class_evidence("ball_state", *model.probabilities(match, labels, data).T)
+    probs = model.probabilities(match, labels, data, regime=regime, tta=tta)
+    return fusion.class_evidence("ball_state", *probs.T)
 
 
 @register("ball_state", "kickoff_wait")
@@ -155,3 +160,13 @@ def kickoff_wait(
     waiting = features.kickoff_wait(match, kickoff_wait_s, kickoff_wait_speed_m_s)
     low = 1.0 / (1.0 + np.exp(-kickoff_llr))
     return np.where(waiting, low, 0.5).astype(np.float32)
+
+
+@register("ball_state", "sequence")
+def sequence(match: Match) -> np.ndarray:
+    """P(play is live) from the temporal network over the package's features (task 13,
+    possession/sequence.py): about 51 s of context on each side, trained in the mixed ball regime
+    chosen in docs/FUSION.md section 10. The committed network is used; nothing is trained here."""
+    from possession import sequence as network
+
+    return network.p_alive(match)
