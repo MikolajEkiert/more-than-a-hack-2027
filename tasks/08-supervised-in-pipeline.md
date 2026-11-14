@@ -37,7 +37,9 @@ function the model is trained on: `raw`, `tau<seconds>`, `controlled<seconds>`.
 - [x] external validation unchanged (0.659 / 0.561), runs logged
 - [x] tests without data or network (`tests/test_supervised.py`, contract tests through a stub)
 - [x] training data in `docs/TECHNICAL_REPORT.md` section 3; docs/DECISIONS.md lines
-- [ ] the same sha256 on a second machine (alargh, or any other computer)
+- [x] the same sha256 on other systems: a fresh clone, a Linux arm64 container, a Linux x86-64
+      container under emulation
+- [ ] the same sha256 on a teammate's computer (Windows)
 
 ## Log
 - 2026-11-14 · MikolajEkiert/Claude · Merged the branch as written. Bridge
@@ -47,5 +49,8 @@ function the model is trained on: `raw`, `tau<seconds>`, `controlled<seconds>`.
   `solution/idsse.py`: download folder by `MTAH_IDSSE_DIR`, fixed dataset revision, sha256 check
   of every download against `solution/idsse.sha256`. Result: from an empty cache, under this
   repository's lock, the model file is byte-identical to the branch's and the submission file has
-  the sha256 it had before (`25f146c0...`); validation 0.659 / 0.561. What is left: the check on
-  a second machine, then freezing (task 06).
+  the sha256 it had before (`25f146c0...`); validation 0.659 / 0.561.
+- 2026-11-14 · MikolajEkiert/Claude · Merged as PR #13. The same sha256 from an empty cache in a
+  fresh clone (download included), in a Linux arm64 container and in a Linux x86-64 container
+  under emulation. What is left: the same check on a teammate's Windows machine, then freezing
+  (task 06).
