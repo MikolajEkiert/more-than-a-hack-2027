@@ -259,6 +259,162 @@ def _count(values) -> dict:
     return out
 
 
+STOPPAGE_BUCKETS_S = (("<3s", 0.0, 3.0), ("3-10s", 3.0, 10.0), ("10-30s", 10.0, 30.0),
+                      (">30s", 30.0, np.inf))  # fmt: skip
+ON_TIME_S = 0.5  # a predicted stoppage edge this close to the true one counts as on time
+MOVING_M_S = 4.0  # a tracked ball this fast inside the pitch looks like play, not a stoppage
+# Players "running": the 90th percentile of their speeds, averaged over 1 s, at or above 2.5 m/s,
+# halfway between the stoppage and play means of `ball_state.stoppage_evidence` (1.6 and 3.5 m/s).
+# Independent of the ball, so it can say how much of a set of frames is play.
+RUNNING_M_S = 2.5
+RUNNING_WINDOW_S = 1.0
+
+
+def _running(match: Match) -> np.ndarray:
+    speed = features.collective_speed(match)
+    window = max(int(round(RUNNING_WINDOW_S * match.fps)), 1)
+    ok = np.isfinite(speed)
+    kernel = np.ones(window)
+    total = np.convolve(np.where(ok, speed, 0.0), kernel, mode="same")
+    count = np.convolve(ok.astype(np.float64), kernel, mode="same")
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return (total / count) >= RUNNING_M_S
+
+
+def _graded_runs(mask: np.ndarray, half: np.ndarray) -> list[tuple[int, int]]:
+    return [r for number in (1, 2) for r in _runs(mask & (half == number))]
+
+
+def deadball_parts(labels, truth, match: Match) -> dict:
+    """Per-stoppage quantities behind `deadball_errors`: lengths and edge lags in seconds and
+    boolean outcomes, so that a caller can pool them over several matches. No frame indices."""
+    labels, truth = np.asarray(labels).astype("<U1"), np.asarray(truth).astype("<U1")
+    fps, half, seen = match.fps, match.half, match.ball_seen
+    graded = (half > 0) & (truth != "X")
+    pred, true = (labels == "D") & graded, (truth == "D") & graded
+    true_runs, pred_runs = _graded_runs(true, half), _graded_runs(pred, half)
+    pred_starts = np.array([a for a, _ in pred_runs], dtype=np.int64)
+    pred_stops = np.array([b for _, b in pred_runs], dtype=np.int64)
+    length, found, start_lag, end_lag = [], [], [], []
+    for a, b in true_runs:
+        length.append((b - a) / fps)
+        hit = np.flatnonzero((pred_starts < b) & (pred_stops > a))
+        found.append(bool(len(hit)))
+        if len(hit):
+            start_lag.append((pred_starts[hit[0]] - a) / fps)
+            end_lag.append((pred_stops[hit[-1]] - b) / fps)
+    false_tracked = [bool(seen[a:b].mean() > 0.5) for a, b in pred_runs if not true[a:b].any()]
+    return {
+        "frames": {
+            "graded": int(graded.sum()),
+            "true_dead": int(true.sum()),
+            "pred_dead": int(pred.sum()),
+            "missed_dead": int((true & ~pred).sum()),
+            "false_dead": int((pred & ~true).sum()),
+            "false_dead_ball_tracked": int((pred & ~true & seen).sum()),
+            "true_dead_ball_missing": int((true & ~seen).sum()),
+            "true_live": int((graded & ~true).sum()),
+            "true_live_ball_missing": int((graded & ~true & ~seen).sum()),
+        },
+        "length_s": length,
+        "found": found,
+        "start_lag_s": start_lag,
+        "end_lag_s": end_lag,
+        "false_stoppage_ball_tracked": false_tracked,
+    }
+
+
+def _share(a: int, b: int) -> float | None:
+    return round(a / b, 4) if b else None
+
+
+def summarise_deadball(parts: list[dict]) -> dict:
+    """Aggregates of one or more `deadball_parts` results, pooled."""
+    frames = {k: sum(p["frames"][k] for p in parts) for k in parts[0]["frames"]}
+    length = np.concatenate([np.asarray(p["length_s"], float) for p in parts])
+    found = np.concatenate([np.asarray(p["found"], bool) for p in parts])
+    start = np.concatenate([np.asarray(p["start_lag_s"], float) for p in parts])
+    end = np.concatenate([np.asarray(p["end_lag_s"], float) for p in parts])
+    tracked = np.concatenate([np.asarray(p["false_stoppage_ball_tracked"], bool) for p in parts])
+    by_length = {}
+    for name, lo, hi in STOPPAGE_BUCKETS_S:
+        inside = (length >= lo) & (length < hi)
+        by_length[name] = {
+            "n": int(inside.sum()),
+            "missed_share": _share(int((~found & inside).sum()), int(inside.sum())),
+        }
+    return {
+        "true_dead_share": _share(frames["true_dead"], frames["graded"]),
+        "pred_dead_share": _share(frames["pred_dead"], frames["graded"]),
+        "missed_share_of_true_dead_frames": _share(frames["missed_dead"], frames["true_dead"]),
+        "false_share_of_true_live_frames": _share(frames["false_dead"], frames["true_live"]),
+        "false_dead_frames_ball_tracked_share": _share(
+            frames["false_dead_ball_tracked"], frames["false_dead"]
+        ),
+        "ball_missing_given_dead": _share(frames["true_dead_ball_missing"], frames["true_dead"]),
+        "ball_missing_given_live": _share(frames["true_live_ball_missing"], frames["true_live"]),
+        "true_stoppages": int(len(length)),
+        "missed_stoppages_share": _share(int((~found).sum()), int(len(found))),
+        "missed_by_length": by_length,
+        "start_lag_s": _dist(start),
+        "start_on_time_share": _share(int((np.abs(start) <= ON_TIME_S).sum()), int(len(start))),
+        "end_lag_s": _dist(end),
+        "end_on_time_share": _share(int((np.abs(end) <= ON_TIME_S).sum()), int(len(end))),
+        "false_stoppages": int(len(tracked)),
+        "false_stoppages_ball_tracked_share": _share(int(tracked.sum()), int(len(tracked))),
+    }
+
+
+def deadball_errors(labels, truth, match: Match) -> dict:
+    """How predicted stoppages (D) compare with the true ones: missed and false stoppages, edge
+    lags, and whether the ball was tracked where a stoppage was invented. Aggregates only."""
+    return summarise_deadball([deadball_parts(labels, truth, match)])
+
+
+def regime(match: Match, labels, truth=None) -> dict:
+    """Which ball regime the tracking is in, read from the stoppages of `labels`.
+
+    Of the frames labelled D, how many have a tracked ball, and of those how many have it moving
+    at MOVING_M_S or more inside the pitch (that looks like play, i.e. a false stoppage). With a
+    truth, the same share for the true and for the false stoppages, and P(ball missing | dead or
+    live): the reference points for reading the numbers of a match that has no truth.
+    """
+    labels = np.asarray(labels).astype("<U1")
+    speed = features.ball_kinematics(match)["speed"]
+    with np.errstate(invalid="ignore"):
+        moving = (speed >= MOVING_M_S) & (features.ball_edge_distance(match) >= 0)
+    graded, seen = match.graded, match.ball_seen
+    running = _running(match)
+    pred = (labels == "D") & graded
+    out = {
+        "pred_dead_share": _rate(pred, graded),
+        "pred_dead_ball_tracked_share": _rate(seen, pred),
+        "pred_dead_tracked_moving_share": _rate(moving, pred & seen),
+        "ball_missing_share": _rate(~seen, graded),
+        "running_given_ball_missing": _rate(running, graded & ~seen),
+        "running_given_pred_dead_tracked": _rate(running, pred & seen),
+        "running_given_pred_dead_missing": _rate(running, pred & ~seen),
+        "running_given_pred_live": _rate(running, graded & np.isin(labels, ["H", "A"])),
+    }
+    if truth is None:
+        return out
+    truth = np.asarray(truth).astype("<U1")
+    true = (truth == "D") & graded
+    live = graded & np.isin(truth, ["H", "A"])
+    return {
+        **out,
+        "true_dead_ball_tracked_share": _rate(seen, true),
+        "true_dead_tracked_moving_share": _rate(moving, true & seen),
+        "false_dead_tracked_moving_share": _rate(moving, pred & live & seen),
+        "ball_missing_given_dead": _rate(~seen, true),
+        "ball_missing_given_live": _rate(~seen, live),
+        "running_given_true_dead": _rate(running, true),
+        "running_given_true_live": _rate(running, live),
+        "running_given_true_dead_tracked": _rate(running, true & seen),
+        "running_given_true_live_tracked": _rate(running, live & seen),
+    }
+
+
 def label_stats(labels, half: np.ndarray, fps: int) -> dict:
     """Aggregates of a submission's labels over the graded frames given by `half` (1, 2, 0)."""
     codes = pm.label_codes(labels)  # a label array or the DataFrame from read_label_csv

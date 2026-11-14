@@ -183,3 +183,50 @@ def test_kickoff_audit_counts_setups_and_tags():
     assert out["found_with_a_tag_within_10s"] == 1  # the second set-up has no tag near it
     assert out["found_kick_after_tag_start_s"] == [3.2]  # frame 180 against a window from 100
     assert out["setup_until_kick_s"] == [3.2, 3.6]
+
+
+def _stoppage_case():
+    m = make_match(n=1000, ball_missing=0.0)
+    truth = np.full(m.n_frames, "H", dtype="<U1")
+    truth[~m.graded] = "X"
+    truth[300:400] = "D"  # 4 s, found 1 s late, ends on time
+    truth[600:650] = "D"  # 2 s, missed
+    labels = truth.copy()
+    labels[300:325] = "H"
+    labels[600:650] = "H"
+    labels[800:850] = "D"  # invented, with the ball tracked
+    return m, labels, truth
+
+
+def test_deadball_errors_counts_missed_false_and_late():
+    m, labels, truth = _stoppage_case()
+    out = inspect_data.deadball_errors(labels, truth, m)
+    assert out["true_stoppages"] == 2 and out["missed_stoppages_share"] == 0.5
+    assert out["start_lag_s"]["max"] == pytest.approx(1.0)
+    assert out["start_on_time_share"] == 0.0 and out["end_on_time_share"] == 1.0
+    assert out["false_stoppages"] == 1 and out["false_stoppages_ball_tracked_share"] == 1.0
+    assert out["missed_by_length"]["<3s"] == {"n": 1, "missed_share": 1.0}
+    assert out["missed_by_length"]["3-10s"] == {"n": 1, "missed_share": 0.0}
+    assert out["missed_share_of_true_dead_frames"] == pytest.approx(75 / 150, abs=1e-4)
+    assert out["ball_missing_given_dead"] == 0.0
+
+
+def test_deadball_parts_pool_like_one_match():
+    m, labels, truth = _stoppage_case()
+    part = inspect_data.deadball_parts(labels, truth, m)
+    pooled = inspect_data.summarise_deadball([part, part])
+    single = inspect_data.summarise_deadball([part])
+    assert pooled["true_stoppages"] == 2 * single["true_stoppages"]
+    assert pooled["missed_stoppages_share"] == single["missed_stoppages_share"]
+
+
+def test_regime_with_and_without_truth():
+    m, labels, truth = _stoppage_case()
+    out = inspect_data.regime(m, labels)
+    assert out["pred_dead_ball_tracked_share"] == 1.0
+    for name, value in _rates(out):
+        assert 0 <= value <= 1, name
+    full = inspect_data.regime(m, labels, truth=truth)
+    assert full["ball_missing_given_dead"] == 0.0 and full["ball_missing_given_live"] == 0.0
+    assert full["false_dead_tracked_moving_share"] is not None
+    assert inspect_data.regime(m, truth, truth=truth)["false_dead_tracked_moving_share"] is None
