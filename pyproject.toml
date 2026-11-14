@@ -10,6 +10,10 @@ dependencies = [
     # Pinned by the organisers: the version the Metrica FIFA/EPTS export is known to load under.
     "kloppy==3.18.0",
     "matplotlib",
+    # The supervised model in solution/ (configs/hybrid_supervised.toml). Pinned: the trained
+    # trees, and so the submission file, depend on the exact versions (RULES.md 3).
+    "lightgbm==4.5.0",
+    "scipy==1.17.1",
 ]
 
 [dependency-groups]
@@ -35,7 +39,9 @@ packages = ["src/possession"]
 line-length = 100
 target-version = "py311"
 # Organiser-owned code is never reformatted: a diff there breaks scripts/check_repo.py.
-extend-exclude = ["evaluation", "starter", "games.py"]
+# solution/ and notebooks/ are the supervised track's package, merged as written: its cache keys
+# hash its own source, and a reformat there would hide real changes in a diff.
+extend-exclude = ["evaluation", "starter", "games.py", "solution", "notebooks"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "NPY"]
@@ -47,4 +53,7 @@ known-first-party = ["possession", "games", "possession_metrics", "starter", "te
 testpaths = ["tests"]
 pythonpath = [".", "src", "evaluation"]
 addopts = "-q"
-markers = ["needs_data: requires the match data in data/ (skipped otherwise)"]
+markers = [
+    "needs_data: requires the match data in data/ (skipped otherwise)",
+    "needs_model: uses the real supervised model, not the stub of tests/conftest.py",
+]

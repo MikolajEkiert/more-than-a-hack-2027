@@ -44,7 +44,8 @@ def record(
         "config": config.as_dict(),
         "git_commit": git("rev-parse", "--short", "HEAD"),
         "git_branch": git("rev-parse", "--abbrev-ref", "HEAD"),
-        "git_dirty": bool(git("status", "--porcelain", "--", "src", "configs")),
+        # solution/ counts too: the supervised model is trained from its source
+        "git_dirty": bool(git("status", "--porcelain", "--", "src", "configs", "solution")),
         "csv_sha256": sha256,
         "seconds": round(seconds, 1),
         "diagnostics": diagnostics,

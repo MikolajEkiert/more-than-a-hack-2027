@@ -171,18 +171,37 @@ What it says:
   the second-half kick-off; with `ball_state.kickoff_wait` as a source the hybrid starts 0.2 s
   from the published anchor, with no constant of this match.
 
-By the protocol of section 4 the hybrid is what the team should build towards. It is **not a
-submission candidate yet**: `configs/hybrid_supervised.toml` reads probability files that only
-exist locally. Before it can be one:
+By the protocol of section 4 the hybrid is the team's candidate. When this section was first
+written it could not be submitted, because `configs/hybrid_supervised.toml` read probability
+files that only existed locally. Section 7 records how that was closed.
 
-1. The supervised model becomes a pair of registered methods that the repository can retrain by
-   itself (LightGBM and SciPy in `pyproject.toml` and `uv.lock`; IDSSE, 2.7 GB, downloaded at
-   run time), so that `make submit` regenerates the file byte for byte.
-2. Its kick-off rule, which reads the organisers' published kick-off frame, is replaced by
-   `ball_state.kickoff_wait` (AGENTS.md hard rule 1: no constants tied to frames of this match).
-3. Its training data goes into `docs/TECHNICAL_REPORT.md` section 3.
-4. The team settles the open question about fitting on the match: the model's degradation is
-   calibrated on the unlabelled tracking of the competition match.
-5. The turnover cost is the knob that follows the label reading (5 favours `touch`, 8 favours
-   `controlled`); 5 is the value that does not lose under either.
+## 7. The hybrid, reproducible from the repository (task 08, 2026-11-14)
+
+1. **The model is trained by the repository.** The supervised branch is merged as the package
+   `solution/`, as written. The pipeline reaches its model through `possession/supervised.py`
+   and two registered methods, `ball_state.supervised` and `team.supervised`; LightGBM 4.5.0 and
+   SciPy 1.17.1 are pinned in `pyproject.toml` and `uv.lock`. The first run downloads the open
+   data (2.63 GB, one fixed revision, every file checked against `solution/idsse.sha256`) and
+   trains; later runs load the cached model.
+2. **Nothing changed in the output.** Retrained from an empty cache under the repository's lock
+   (numpy 2.4.6; the branch's own environment had 1.26.4), the model file is byte-identical to
+   the one the branch trained, the submission file has the same sha256 as before the port, and
+   the external scores are the same: 0.659 (`label_free`) and 0.561 (`published_baselines`),
+   accepted against `unsup_v2` under both. Runs: `experiments/runs/20261114T012451*` (the
+   match), `T012556*` and `T012701*` (external).
+3. **Only the model is taken from the package.** Its own decoder, command line and kick-off rule
+   (which reads the organisers' published kick-off frame) stay in `solution/` for the supervised
+   track's notebooks, but the pipeline calls none of them. The kick-off rule in use is
+   `ball_state.kickoff_wait`, from the formation, with no constant of this match (AGENTS.md hard
+   rule 1).
+4. **The training data** is listed in `docs/TECHNICAL_REPORT.md` section 3.
+5. **Fitting on the match.** The model's degradation is calibrated on three unlabelled
+   statistics of the competition tracking (share of frames without a ball, mean length of those
+   stretches, players visible). No label of the match is involved, and RULES.md allows it ("the
+   provided data is a starting point"). The team received no message from the organisers that
+   says otherwise (docs/DECISIONS.md).
+6. **The turnover cost stays at 5**, the value that does not lose under either label reading (5
+   favours `touch`, 8 favours `controlled`). The label function the model is trained on is a
+   parameter (`labels`), `raw` by default: the two alternatives measured so far gain under one
+   reading and lose under the other (docs/DECISIONS.md).
 

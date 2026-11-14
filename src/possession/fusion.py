@@ -19,6 +19,17 @@ EPS = 1e-6
 FILE_KEYS = {"ball_state": "p_alive", "team": "p_home"}
 
 
+def class_evidence(stage: str, p_h, p_a, p_d) -> np.ndarray:
+    """A stage's evidence from three class probabilities per frame, P(H), P(A), P(D):
+    p_alive = 1 - P(D) for `ball_state`, p_home = P(H) / (P(H) + P(A)) for `team` (NaN where the
+    model gives the two teams no probability at all)."""
+    p_h, p_a, p_d = (np.asarray(p, dtype=np.float64) for p in (p_h, p_a, p_d))
+    if stage == "ball_state":
+        return 1.0 - p_d
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(p_h + p_a > EPS, p_h / (p_h + p_a), np.nan)
+
+
 def from_file(match: Match, stage: str, path: str, key: str | None = None) -> np.ndarray:
     """Per-frame evidence for `stage` read from a .npy or .npz file.
 
@@ -43,14 +54,7 @@ def from_file(match: Match, stage: str, path: str, key: str | None = None) -> np
             if name in data:
                 values = data[name]
             elif {"p_h", "p_a", "p_d"} <= set(data.files):
-                p_h, p_a, p_d = (
-                    np.asarray(data[k], dtype=np.float64) for k in ("p_h", "p_a", "p_d")
-                )
-                if stage == "ball_state":
-                    values = 1.0 - p_d
-                else:
-                    with np.errstate(invalid="ignore", divide="ignore"):
-                        values = np.where(p_h + p_a > EPS, p_h / (p_h + p_a), np.nan)
+                values = class_evidence(stage, data["p_h"], data["p_a"], data["p_d"])
             else:
                 raise KeyError(f"{file.name}: no '{name}' and no p_h/p_a/p_d in {data.files}")
     values = np.asarray(values, dtype=np.float64)

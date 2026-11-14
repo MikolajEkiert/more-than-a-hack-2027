@@ -2,18 +2,20 @@
 repos:
   - repo: local
     hooks:
+      # solution/ is the supervised track's package, merged as written: its cache keys hash its
+      # own source, so it is not reformatted (pyproject.toml excludes it from ruff as well).
       - id: ruff-format
         name: ruff format
         entry: uv run ruff format
         language: system
         types: [python]
-        exclude: ^(evaluation|starter)/|^games\.py$
+        exclude: ^(evaluation|starter|solution)/|^games\.py$
       - id: ruff-check
         name: ruff check
         entry: uv run ruff check --fix
         language: system
         types: [python]
-        exclude: ^(evaluation|starter)/|^games\.py$
+        exclude: ^(evaluation|starter|solution)/|^games\.py$
       - id: nbstripout
         name: strip notebook outputs (derived data must not be published)
         entry: uv run nbstripout

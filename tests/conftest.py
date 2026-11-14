@@ -46,3 +46,28 @@ def make_match(n=3000, n_slots=8, seed=0, ungraded_head=200, ball_missing=0.3) -
 @pytest.fixture
 def match():
     return make_match()
+
+
+def fake_probabilities(match: Match, labels: str = "raw") -> np.ndarray:
+    """(n, 3) P(H), P(A), P(D) standing in for the supervised model: a deterministic function of
+    the tracking (dead where the ball is not tracked, else the team of the nearest player)."""
+    from possession import features
+
+    _, team = features.nearest_player(match)
+    p_d = np.where(match.ball_seen, 0.1, 0.8)
+    home = np.where(team == HOME, 0.8, 0.2)
+    return np.stack([(1 - p_d) * home, (1 - p_d) * (1 - home), p_d], axis=1)
+
+
+@pytest.fixture(autouse=True)
+def stub_supervised_model(request, monkeypatch):
+    """The supervised model needs the match data and 2.7 GB of open data, so unit tests replace
+    its probabilities with `fake_probabilities`. The methods built on it (`ball_state.supervised`,
+    `team.supervised`, the hybrid config) are then covered on a fresh clone like every other
+    method; what is not covered here is the model itself. Mark a test `needs_model` to keep the
+    real one."""
+    if request.node.get_closest_marker("needs_model"):
+        return
+    from possession import supervised
+
+    monkeypatch.setattr(supervised, "probabilities", fake_probabilities)

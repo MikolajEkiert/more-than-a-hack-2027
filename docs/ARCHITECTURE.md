@@ -54,6 +54,30 @@ probabilities from a model outside the registry) as a weighted sum of log-odds. 
 supervised model is fused with the label-free evidence: before the decoder, so the output is
 still whole possessions. Contract and decision protocol: docs/FUSION.md.
 
+## The supervised model
+
+`solution/` is the supervised track's package (branch `supervised_approach`, merged as written):
+seven open Bundesliga matches (IDSSE) degraded to look like automatic tracking, 203 hand-made
+features, one LightGBM with the classes H / A / D. `possession/supervised.py` is the only module
+of the pipeline that imports it. It converts a `Match` into the package's layout, trains the
+package's final model once, and returns three class probabilities per frame. The methods
+`ball_state.supervised` (1 - P(D)) and `team.supervised` (P(H) / (P(H) + P(A))) read them; their
+parameter `labels` names the label function the model is trained on.
+
+- The pipeline takes the package's features and model, nothing else. Its decoder, its command
+  line and its kick-off rule are not called.
+- The degradation of the training matches is calibrated on three unlabelled statistics of the
+  competition tracking, so the model needs the match data even when it scores another match.
+- The open data and the package's cache live in `.cache/idsse/` and `.cache/solution/`, never in
+  `data/`. Both can be deleted and are rebuilt identically: 2.63 GB of downloads (one fixed
+  revision, each file checked against `solution/idsse.sha256`), then about three minutes on a
+  laptop.
+- `solution/` and `notebooks/` are excluded from ruff, like organiser code. The package's cache
+  keys hash its own source, and a diff there should mean a real change.
+- Unit tests replace the model with a stub (`tests/conftest.py`), so the methods and the hybrid
+  config are covered on a fresh clone. The model itself is checked by retraining from an empty
+  cache and comparing the file (docs/FUSION.md section 7).
+
 ## Evaluation without tuning on the public window
 
 - `scoring.diagnostics`: possession count, mean duration, home share and label shares, all with no GT.
