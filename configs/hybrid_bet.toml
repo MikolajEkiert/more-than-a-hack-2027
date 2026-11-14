@@ -1,0 +1,22 @@
+# Version 3, the bet on the label reading (docs/FUSION.md section 8): the member of the family
+# fixed there that nested selection on the Metrica matches picks. The model is trained on labels
+# in which a spell of the other team shorter than 2 s between two spells of one team is merged
+# into them (`tau2`), and the decoder is slower to change team (8) and to stop play (20).
+# It gains if the private ground truth ignores short interruptions and loses if it keeps them.
+name = "hybrid_bet"
+
+[ball_state]
+method = "blend"
+sources = [{ method = "supervised", labels = "tau2" }, "kickoff_wait"]
+
+[team]
+method = "blend"
+sources = [{ method = "supervised", labels = "tau2" }]
+
+[decode]
+method = "switch_cost"
+turnover_cost = 8.0
+stop_cost = 20.0
+restart_cost = 20.0
+snap_start_s = 3.0
+snap_end_s = 3.0
