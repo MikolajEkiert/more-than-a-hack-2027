@@ -8,6 +8,8 @@
                                            (rates, percentiles, histograms; never rows)
     possession validate CONFIG... [--suite S] [--profile P] [--against CONFIG] [--games a,b]
                                            score configs on other, labelled matches
+    possession decide V1.toml V3.toml      choose between two versions by the rule fixed in
+                                           docs/FUSION.md section 8 (evidence, vetoes, footprint)
     possession calibrate [--target match] [--write]
                                            fit a degradation profile (to label-free statistics
                                            of the match, or to the published baseline scores)
@@ -225,6 +227,125 @@ def cmd_validate(args) -> int:
     return 0
 
 
+def cmd_decide(args) -> int:
+    """Choose between two versions by the rule of docs/FUSION.md section 8."""
+    from possession import config as config_mod
+    from possession import experiments, loader, pipeline, scoring, validation
+
+    started = time.time()
+    paths = {"first": args.first, "second": args.second}
+    configs = {name: config_mod.load(path) for name, path in paths.items()}
+    seeds = [int(seed) for seed in _csv(args.seeds)]
+    weights = None
+    if args.weights:
+        weights = {k: float(v) for k, v in (item.split("=") for item in _csv(args.weights))}
+    print(f"version 1: {configs['first'].name} ({paths['first']})")
+    print(f"version 3: {configs['second'].name} ({paths['second']})")
+
+    evidence = {}
+    for profile in _csv(args.profiles):
+        evidence[profile] = tuple(
+            _evaluate(paths[name], None, seeds, profile, "metrica")[1] for name in paths
+        )
+    vetoes, unavailable = {}, []
+    for suite in validation.VETO_WINS:
+        try:
+            vetoes[suite] = tuple(
+                _evaluate(paths[name], None, seeds, None, suite)[1] for name in paths
+            )
+        except FileNotFoundError as error:
+            unavailable.append(f"{suite}: {error}")
+
+    match = loader.load_match(verbose=False)
+    results = {name: pipeline.run(cfg, match) for name, cfg in configs.items()}
+    footprint = {n: scoring.footprint(r.labels, match.half, match.fps) for n, r in results.items()}
+    between = validation.agreement(match, results["first"], results["second"])
+    graded = match.graded
+    changed = float((results["first"].labels[graded] != results["second"].labels[graded]).mean())
+    sanity = {n: scoring.public_sanity(r.labels, match.game) for n, r in results.items()}
+
+    verdict = validation.choose(evidence, vetoes, footprint, weights)
+    if unavailable:
+        verdict["choose"] = "first"
+        verdict["conditions"].update(
+            {f"veto set available: {u.split(':')[0]}": False for u in unavailable}
+        )
+
+    print("\nevidence, Metrica matches: spellF1 of version 3 minus version 1")
+    for scenario, value in verdict["scenarios"].items():
+        print(f"  {scenario:<34} {value:+.4f}")
+    interval = verdict["weighted_gain_interval"]
+    print(
+        f"  weighted mean {verdict['weighted_gain']:+.4f}"
+        + (
+            f"   5-95% over (match, window) blocks [{interval[0]:+.4f}, {interval[1]:+.4f}]"
+            if interval
+            else ""
+        )
+        + f"   windows won {verdict['windows_won_share']}   weights {verdict['weights']}"
+    )
+    print("veto sets:")
+    for suite, v in verdict["vetoes"].items():
+        print(
+            f"  {suite:<6} gain {v['gain']:+.4f}  by reading {v['by_reading']}"
+            f"  matches won {v['matches_won']}/{v['n_matches']}"
+            f"  -> {'passes' if v['passes'] else 'VETO'}"
+        )
+    for line in unavailable:
+        print(f"  not available: {line}")
+    print("competition match, no labels:            version 1   version 3")
+    for key in ("possessions", "possessions_per_live_minute", "mean_possession_s", "dead_share"):
+        print(f"  {key:<38} {footprint['first'][key]:>9}   {footprint['second'][key]:>9}")
+    blocks = {n: footprint[n]["per_live_minute_by_block"] for n in footprint}
+    print(f"  per live minute by 10-minute block       {blocks['first']}   {blocks['second']}")
+    print(
+        f"  frames that differ {changed:.2%}; possessions of one scored against the other"
+        f" {between['possession_agreement']}; same team where both say play"
+        f" {between['team_agreement']}"
+    )
+    if all(sanity.values()):
+        print(
+            "  public window, sanity only (not part of the rule): "
+            + ", ".join(
+                f"{label} {sanity[n]['spellF1']} ({sanity[n]['n_pred_possessions']} vs"
+                f" {sanity[n]['n_gt_possessions']} possessions)"
+                for n, label in (("first", "version 1"), ("second", "version 3"))
+            )
+        )
+    print("conditions for version 3:")
+    for name, holds in verdict["conditions"].items():
+        print(f"  [{'x' if holds else ' '}] {name}")
+    chosen = "version 3" if verdict["choose"] == "second" else "version 1"
+    print(f"verdict: {chosen} ({configs[verdict['choose']].name})")
+
+    if not args.no_log:
+        external = {
+            "decision": {
+                **verdict,
+                "version_1": paths["first"],
+                "version_3": paths["second"],
+                "profiles": list(evidence),
+                "seeds": seeds,
+                "footprint": footprint,
+                "between_versions": {**between, "frames_that_differ": round(changed, 4)},
+                "public_window_sanity_only": sanity,
+                "unavailable": unavailable,
+            }
+        }
+        diag = scoring.diagnostics(results["second"].labels, match.half, match.fps)
+        path = experiments.record(
+            configs["second"],
+            "",
+            diag,
+            None,
+            time.time() - started,
+            note=args.note or "",
+            external=external,
+        )
+        print(f"logged {_rel(path)}")
+    return 0
+
+
 def cmd_export(args) -> int:
     """Write every validation condition's tracking to .npz, for a model that lives elsewhere."""
     import numpy as np
@@ -417,6 +538,16 @@ def main(argv=None) -> int:
     p.add_argument("--note", default="")
     p.add_argument("--no-log", action="store_true")
     p.set_defaults(fn=cmd_validate)
+
+    p = sub.add_parser("decide", help="choose between two versions (docs/FUSION.md section 8)")
+    p.add_argument("first", help="version 1: the cautious configuration")
+    p.add_argument("second", help="version 3: the bet")
+    p.add_argument("--profiles", default="label_free,match_like", help="evidence profiles")
+    p.add_argument("--seeds", default="0,1,2")
+    p.add_argument("--weights", default="", help="e.g. touch=0.5,controlled=0.5 (the default)")
+    p.add_argument("--note", default="")
+    p.add_argument("--no-log", action="store_true")
+    p.set_defaults(fn=cmd_decide)
 
     p = sub.add_parser("export", help="write the validation conditions' tracking to .npz")
     p.add_argument("--out", default=str(REPO_ROOT / ".cache" / "exports"))

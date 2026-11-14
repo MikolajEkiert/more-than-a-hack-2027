@@ -60,3 +60,15 @@ def test_pipeline_rejects_bad_stage_output(match, monkeypatch):
     monkeypatch.setitem(registry._REGISTRY["ball_state"], "ball_visible", broken)
     with pytest.raises(ValueError, match="outside"):
         pipeline.run(config.parse(BASE), match)
+
+
+def test_footprint_counts_possessions_per_live_minute():
+    from possession import scoring
+
+    fps = 25
+    half = np.ones(2 * 60 * fps, dtype=np.int8)  # two minutes, all graded
+    labels = np.array(["H"] * 750 + ["A"] * 750 + ["D"] * 1500)  # one minute live, one dead
+    out = scoring.footprint(labels, half, fps, minutes=1.0)
+    assert out["possessions"] == 2 and out["dead_share"] == 0.5
+    assert out["possessions_per_live_minute"] == 2.0
+    assert out["per_live_minute_by_block"]["max"] == 2.0  # the dead minute has no live time

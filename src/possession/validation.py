@@ -634,8 +634,56 @@ def evaluate(
         labels = run(match)
         for convention, truth in truths.items():
             cell = {"game": game, "seed": seed, "convention": convention}
-            cells.append({**cell, **score(labels, truth), **stoppage_context(labels, truth, match)})
+            cells.append(
+                {
+                    **cell,
+                    **score(labels, truth),
+                    **stoppage_context(labels, truth, match),
+                    "windows": window_scores(labels, truth, match.half, match.fps),
+                }
+            )
     return cells
+
+
+WINDOW_MINUTES = 10.0
+
+
+def windows(half: np.ndarray, fps: int, minutes: float = WINDOW_MINUTES) -> list[tuple[int, int]]:
+    """Consecutive windows of `minutes` inside each half, as (start, stop) frames.
+
+    A last piece shorter than half a window joins the window before it.
+    """
+    size = int(round(minutes * 60 * fps))
+    out = []
+    for number in (1, 2):
+        for start, stop in zip(*runs(half == number), strict=True):
+            edges = [*range(int(start), int(stop), size), int(stop)]
+            if len(edges) > 2 and edges[-1] - edges[-2] < size / 2:
+                edges.pop(-2)
+            out += list(zip(edges[:-1], edges[1:], strict=True))
+    return out
+
+
+def window_scores(
+    predicted: np.ndarray, truth: np.ndarray, half: np.ndarray, fps: int, minutes=WINDOW_MINUTES
+) -> list:
+    """spellF1 of every window, scored the way the public window is: the truth is X outside it.
+
+    The prediction is never recomputed for a window. An entry is None where the truth has no
+    graded frame in the window.
+    """
+    gt, pred = pm.label_codes(truth), pm.label_codes(predicted)
+    out = []
+    for start, stop in windows(half, fps, minutes):
+        masked = np.full_like(gt, pm.X)
+        masked[start:stop] = gt[start:stop]
+        graded = pm.valid_runs(masked)
+        if not graded:
+            out.append(None)
+            continue
+        filled = pm.fill_abstentions(pred, graded)
+        out.append(round(pm.spell_scores(masked, filled, graded)["mean_f1"], 4))
+    return out
 
 
 def summarise(cells: list[dict], key: str = "spellF1", readings=None) -> dict:
@@ -703,6 +751,106 @@ def compare(candidate: list[dict], reference: list[dict], readings=None) -> dict
         "games_won": won,
         "n_games": len(by_game),
         "accepted": bool(accepted),
+    }
+
+
+# -- choosing between two versions (docs/FUSION.md section 8) ----------------------------------
+
+EVIDENCE_MIN_GAIN = 0.02  # weighted mean spellF1 the second version must add over the evidence
+EVIDENCE_MAX_LOSS = 0.02  # it may not lose more than this in any evidence scenario
+VETO_WINS = {"idsse": 5, "pff": 9}  # matches it must win on each veto set (of 7 and of 16)
+FOOTPRINT_PER_LIVE_MINUTE = (3.5, 7.0)  # possessions per live minute on the competition match
+FOOTPRINT_DEAD_SHARE = 0.03  # its dead share may differ from the first version's by this much
+
+
+def _window_differences(first: list[dict], second: list[dict]) -> dict:
+    """{(game, reading, window): mean over seeds of second - first} for cells that carry windows."""
+    pairs: dict = {}
+    for cells, sign in ((first, -1.0), (second, 1.0)):
+        for cell in cells:
+            for index, value in enumerate(cell.get("windows") or ()):
+                if value is not None:
+                    key = (cell["game"], cell["convention"], index)
+                    pairs.setdefault(key, []).append(sign * value)
+    seeds = {(c["game"], c["convention"]): 0 for c in first}
+    for cell in first:
+        seeds[(cell["game"], cell["convention"])] += 1
+    return {k: float(np.sum(v)) / seeds[k[:2]] for k, v in pairs.items()}
+
+
+def choose(evidence: dict, vetoes: dict, footprint: dict, weights: dict | None = None) -> dict:
+    """The rule of docs/FUSION.md section 8, applied to `evaluate` cells of two versions.
+
+    evidence   {profile: (cells of version 1, cells of version 3)} on the Metrica matches
+    vetoes     {suite: (cells of version 1, cells of version 3)} for "idsse" and "pff"
+    footprint  {"first": {...}, "second": {...}} from `scoring.footprint` on the competition match
+    weights    {reading: weight}; default: every reading the same
+    Version 3 ("second") is chosen only if every condition holds; otherwise version 1.
+    """
+    scenarios, by_reading = {}, {}
+    for profile, (first, second) in evidence.items():
+        a, b = summarise(first), summarise(second)
+        for reading, value in a["by_convention"].items():
+            difference = round(b["by_convention"][reading] - value, 4)
+            scenarios[f"{profile}/{reading}"] = difference
+            by_reading.setdefault(reading, []).append(difference)
+    weights = weights or {reading: 1.0 for reading in by_reading}
+    total = sum(weights[reading] for reading in by_reading)
+    weighted = sum(weights[r] * float(np.mean(v)) for r, v in by_reading.items()) / total
+    worst = min(scenarios.values())
+
+    # block bootstrap over (match, 10-minute window), one draw shared by every scenario
+    differences = {p: _window_differences(*pair) for p, pair in evidence.items()}
+    blocks = sorted({(k[0], k[2]) for d in differences.values() for k in d})
+    rng = np.random.default_rng(0)
+    draws = []
+    for _ in range(2000 if blocks else 0):
+        picks = [blocks[i] for i in rng.integers(0, len(blocks), len(blocks))]
+        per_reading = {}
+        for d in differences.values():
+            for reading in by_reading:
+                values = [d[(g, reading, w)] for g, w in picks if (g, reading, w) in d]
+                if values:
+                    per_reading.setdefault(reading, []).append(float(np.mean(values)))
+        draws.append(
+            sum(weights[r] * float(np.mean(v)) for r, v in per_reading.items())
+            / sum(weights[r] for r in per_reading)
+        )
+    every = [v for d in differences.values() for v in d.values()]
+
+    veto = {}
+    for suite, (first, second) in vetoes.items():
+        result = compare(second, first, readings=rule_readings(suite))
+        veto[suite] = {
+            "gain": result["gain"],
+            "by_reading": result["gain_by_convention"],
+            "matches_won": result["games_won"],
+            "n_matches": result["n_games"],
+            "passes": bool(result["gain"] >= 0 and result["games_won"] >= VETO_WINS[suite]),
+        }
+
+    low, high = FOOTPRINT_PER_LIVE_MINUTE
+    density = footprint["second"]["possessions_per_live_minute"]
+    dead_gap = abs(footprint["second"]["dead_share"] - footprint["first"]["dead_share"])
+    conditions_ = {
+        "weighted mean gain over the evidence": weighted >= EVIDENCE_MIN_GAIN,
+        "no evidence scenario loses more than allowed": worst >= -EVIDENCE_MAX_LOSS,
+        **{f"veto: {suite}": v["passes"] for suite, v in veto.items()},
+        "footprint: possessions per live minute": low <= density <= high,
+        "footprint: dead share": dead_gap <= FOOTPRINT_DEAD_SHARE,
+    }
+    return {
+        "scenarios": scenarios,
+        "weights": weights,
+        "weighted_gain": round(weighted, 4),
+        "weighted_gain_interval": (
+            [round(float(v), 4) for v in np.percentile(draws, (5, 95))] if draws else None
+        ),
+        "worst_scenario": round(worst, 4),
+        "windows_won_share": round(float(np.mean(np.array(every) > 0)), 3) if every else None,
+        "vetoes": veto,
+        "conditions": {k: bool(v) for k, v in conditions_.items()},
+        "choose": "second" if all(conditions_.values()) else "first",
     }
 
 
