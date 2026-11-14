@@ -191,6 +191,9 @@ files that only existed locally. Section 7 records how that was closed.
    match), `T012556*` and `T012701*` (external).
    The same file comes out of a fresh clone, a Linux arm64 container and a Linux x86-64
    container under emulation, each from an empty cache; Windows is not checked yet.
+   The trained model is also committed (`models/`, added on 2026-11-14): with an empty cache
+   the pipeline loads it, downloads nothing and writes the same file in 11 s; with
+   `MTAH_NO_CACHE=1` it retrains from scratch and writes the same file in about two minutes.
 3. **Only the model is taken from the package.** Its own decoder, command line and kick-off rule
    (which reads the organisers' published kick-off frame) stay in `solution/` for the supervised
    track's notebooks, but the pipeline calls none of them. The kick-off rule in use is

@@ -20,21 +20,32 @@ Two things a reader should know:
   * Nothing is stored in data/. The open data (2.7 GB, downloaded on first use) goes to
     .cache/idsse/, the package's cache of degraded matches, features and the trained model to
     .cache/solution/. Both directories can be deleted; everything is rebuilt, identically.
+  * The trained models of the submitted configurations are committed in models/ (gzipped
+    LightGBM text, with their sha256). They are copied into the package's cache under the
+    package's own cache key, so a model is used only if it is exactly the one this code, these
+    parameters and this match's statistics would train; otherwise the package trains as usual.
+    With a committed model the open data is not downloaded at all. `MTAH_NO_CACHE=1` makes the
+    package ignore every cache and train from scratch, which is how the committed file is
+    checked (docs/FUSION.md section 7).
 """
 
+import gzip
+import hashlib
 import os
 import sys
 from functools import cache
+from pathlib import Path
 
 import numpy as np
 
 import possession_metrics as pm
 from possession import features
-from possession._paths import CACHE_DIR
+from possession._paths import CACHE_DIR, REPO_ROOT
 from possession.match import Match
 
 IDSSE_DIR = CACHE_DIR / "idsse"
 PACKAGE_CACHE_DIR = CACHE_DIR / "solution"
+MODELS_DIR = REPO_ROOT / "models"  # <cache key>.txt.gz, and `sha256` listing each model's hash
 
 
 def _package():
@@ -90,16 +101,49 @@ def _log(text: str) -> None:
     print(text, file=sys.stderr, flush=True)
 
 
+def seed_model_cache(models_dir: Path = MODELS_DIR, cache_dir: Path | None = None) -> list[str]:
+    """Unpack the committed models into the package's model cache; returns the names it wrote.
+
+    A file models/<key>.txt.gz becomes <cache>/models/<key>.txt, where the package looks before
+    training. <key> is the package's own cache key, so nothing here decides which model is used.
+    Every model's sha256 must be listed in models/sha256; a file that does not match is an error,
+    not a reason to retrain silently.
+    """
+    cache_dir = Path(cache_dir or os.environ.get("MTAH_CACHE_DIR") or PACKAGE_CACHE_DIR)
+    listing = models_dir / "sha256"
+    expected = {}
+    if listing.is_file():
+        expected = dict(line.split()[::-1] for line in listing.read_text().splitlines() if line)
+    written = []
+    for packed in sorted(models_dir.glob("*.txt.gz")):
+        name = packed.name[: -len(".gz")]
+        target = cache_dir / "models" / name
+        if target.is_file():
+            continue
+        text = gzip.decompress(packed.read_bytes())
+        if hashlib.sha256(text).hexdigest() != expected.get(name):
+            raise ValueError(f"{packed}: sha256 does not match {listing}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        partial = target.with_suffix(".part")
+        partial.write_bytes(text)
+        partial.replace(target)
+        written.append(name)
+    return written
+
+
 @cache
 def model(labels: str = "raw"):
     """(booster, feature function) of the package's final configuration, trained on `labels`.
 
-    The first call downloads the open data, degrades and featurises it and trains (minutes);
-    later calls, in this process or another, load the cached model.
+    If models/ holds the model for exactly this configuration it is loaded. Otherwise the first
+    call downloads the open data, degrades and featurises it and trains (minutes); later calls,
+    in this process or another, load the cached model.
     """
     from possession import loader  # here, not at the top: loader reads the match data lazily
 
     degrade, _, submission, package_features = _package()
+    if not os.environ.get("MTAH_NO_CACHE"):
+        seed_model_cache()
     params = degrade.calibrated_params(container(loader.load_match(verbose=False)))
     feature_fn = package_features.FEATURE_SETS[submission.FINAL["features"]]
     train_cfg = {"weights": True} if submission.FINAL["weights"] else None

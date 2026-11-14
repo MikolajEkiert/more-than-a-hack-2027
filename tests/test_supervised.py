@@ -2,6 +2,9 @@
 it can be trained on, and the two stage methods. The model itself is replaced by a stub here
 (tests/conftest.py); training it needs the match data and the open data."""
 
+import gzip
+import hashlib
+
 import numpy as np
 import pytest
 
@@ -80,3 +83,36 @@ def test_hybrid_config_runs_through_the_pipeline():
     assert set(np.unique(result.labels)) <= {"H", "A", "D", "X"}
     assert (result.labels[~match.graded] == "X").all()
     assert {"H", "A", "D"} & set(np.unique(result.labels[match.graded]))
+
+
+def test_committed_models_are_unpacked_into_the_package_cache(tmp_path):
+    models = tmp_path / "models"
+    models.mkdir()
+    text = b"tree\nversion=v4\n"
+    (models / "abc.txt.gz").write_bytes(gzip.compress(text, mtime=0))
+    (models / "sha256").write_text(f"{hashlib.sha256(text).hexdigest()}  abc.txt\n")
+    cache = tmp_path / "cache"
+
+    assert supervised.seed_model_cache(models, cache) == ["abc.txt"]
+    assert (cache / "models" / "abc.txt").read_bytes() == text
+    assert supervised.seed_model_cache(models, cache) == []  # already there: nothing to do
+
+    (cache / "models" / "abc.txt").write_bytes(b"local")  # a cache entry is never overwritten
+    supervised.seed_model_cache(models, cache)
+    assert (cache / "models" / "abc.txt").read_bytes() == b"local"
+
+    (models / "sha256").write_text("0" * 64 + "  abc.txt\n")  # a file that is not the listed one
+    with pytest.raises(ValueError):
+        supervised.seed_model_cache(models, tmp_path / "other")
+    assert not (tmp_path / "other" / "models" / "abc.txt").exists()
+
+
+def test_models_in_the_repository_match_their_listing():
+    lines = (supervised.MODELS_DIR / "sha256").read_text().splitlines()
+    listing = dict(line.split()[::-1] for line in lines if line)
+    packed = sorted(supervised.MODELS_DIR.glob("*.txt.gz"))
+    assert packed and {p.name[: -len(".gz")] for p in packed} == set(listing)
+    for path in packed:
+        text = gzip.decompress(path.read_bytes())
+        assert hashlib.sha256(text).hexdigest() == listing[path.name[: -len(".gz")]]
+        assert text.startswith(b"tree\n")  # a LightGBM text model

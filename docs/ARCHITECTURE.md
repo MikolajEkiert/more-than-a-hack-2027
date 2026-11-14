@@ -72,6 +72,10 @@ parameter `labels` names the label function the model is trained on.
   `data/`. Both can be deleted and are rebuilt identically: 2.63 GB of downloads (one fixed
   revision, each file checked against `solution/idsse.sha256`), then about three minutes on a
   laptop.
+- The trained model of the submitted configuration is committed in `models/` and unpacked into
+  the package's cache under the package's own cache key (`supervised.seed_model_cache`), so it
+  is loaded only if it is exactly the model the current code would train, and nothing is
+  downloaded. `MTAH_NO_CACHE=1` ignores every cache and trains from scratch.
 - `solution/` and `notebooks/` are excluded from ruff, like organiser code. The package's cache
   keys hash its own source, and a diff there should mean a real change.
 - Unit tests replace the model with a stub (`tests/conftest.py`), so the methods and the hybrid
