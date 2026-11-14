@@ -539,13 +539,48 @@ def score(predicted: np.ndarray, truth: np.ndarray, bootstrap: int = 0) -> dict:
     return out
 
 
-def conditions(games=GAMES, seeds=(0, 1, 2), profile: str | None = "label_free"):
-    """Yield (game, seed, match, {convention: truth}) for every validation condition.
+SUITES = ("metrica", "idsse")
 
-    `profile=None` gives the clean tracking (one condition per game, seed None). The stoppages
-    are the same under both conventions, so one degraded match serves both sets of labels.
+
+def rule_readings(suite: str = "metrica") -> tuple[str, ...]:
+    """The label readings of `suite` that count in means and in the acceptance rule.
+
+    A suite may report more readings than these (IDSSE also reports the provider's own flags,
+    which change hands twice as often as the competition's public window).
     """
-    for game in games:
+    if suite == "metrica":
+        return CONVENTIONS
+    if suite == "idsse":
+        from possession import supervised
+
+        return supervised.IDSSE_RULE_READINGS
+    raise KeyError(f"unknown suite {suite!r}; known: {SUITES}")
+
+
+def conditions(
+    games=None, seeds=(0, 1, 2), profile: str | None = "label_free", suite: str = "metrica"
+):
+    """Yield (game, seed, match, {reading: truth}) for every validation condition of `suite`.
+
+    "metrica": the three Metrica sample games, degraded by `profile`. `profile=None` gives the
+    clean tracking (one condition per game, seed None). The stoppages are the same under both
+    conventions, so one degraded match serves both sets of labels.
+    "idsse": the seven matches the supervised model is trained on, degraded as for training
+    (`profile` does not apply), each scored by a model that never saw it
+    (`supervised.idsse_conditions`). Only seeds 0 and 1 exist there.
+    """
+    if suite == "idsse":
+        from possession import supervised
+
+        wanted = None if games is None else {str(g).lower() for g in games}
+        seeds = tuple(s for s in seeds if s in (0, 1)) or (0,)
+        for game, seed, match, truths in supervised.idsse_conditions(seeds=seeds):
+            if wanted is None or game in wanted:
+                yield game, seed, match, truths
+        return
+    if suite != "metrica":
+        raise KeyError(f"unknown suite {suite!r}; known: {SUITES}")
+    for game in GAMES if games is None else games:
         truths = {c: load_external(game, c)[1] for c in CONVENTIONS}
         clean = _load(game)[0]
         if profile is None:
@@ -555,37 +590,67 @@ def conditions(games=GAMES, seeds=(0, 1, 2), profile: str | None = "label_free")
             yield game, seed, degrade(clean, truths["touch"], seed=seed, profile=profile), truths
 
 
-def evaluate(run, games=GAMES, seeds=(0, 1, 2), profile: str | None = "label_free") -> list[dict]:
-    """Score `run(match) -> labels` on every condition; one cell per game, seed and convention."""
+def stoppage_context(labels: np.ndarray, truth: np.ndarray, match: Match) -> dict:
+    """How true stoppages with the ball in view are labelled (the case the Metrica matches lack).
+
+    `stoppage_ball_seen`: share of the true dead-ball frames on which the ball is tracked;
+    `seen_stoppage_called_live` / `lost_stoppage_called_live`: share of those frames (ball
+    tracked / not tracked) that `labels` calls play. None where there are no such frames.
+    """
+    dead = (truth == "D") & match.graded
+    seen = match.ball_seen
+    live = np.isin(labels, ("H", "A"))
+
+    def share(mask, of):
+        return round(float(mask[of].mean()), 4) if of.any() else None
+
+    return {
+        "stoppage_ball_seen": share(seen, dead),
+        "seen_stoppage_called_live": share(live, dead & seen),
+        "lost_stoppage_called_live": share(live, dead & ~seen),
+    }
+
+
+def evaluate(
+    run, games=None, seeds=(0, 1, 2), profile: str | None = "label_free", suite: str = "metrica"
+) -> list[dict]:
+    """Score `run(match) -> labels` on every condition; one cell per game, seed and reading."""
     cells = []
-    for game, seed, match, truths in conditions(games, seeds, profile):
+    for game, seed, match, truths in conditions(games, seeds, profile, suite):
         labels = run(match)
         for convention, truth in truths.items():
             cell = {"game": game, "seed": seed, "convention": convention}
-            cells.append({**cell, **score(labels, truth)})
+            cells.append({**cell, **score(labels, truth), **stoppage_context(labels, truth, match)})
     return cells
 
 
-def summarise(cells: list[dict], key: str = "spellF1") -> dict:
-    """Means of `key` over the cells: overall, per convention, per game, per game and convention."""
+def summarise(cells: list[dict], key: str = "spellF1", readings=None) -> dict:
+    """Means of `key` over the cells: overall, per reading, per game, per game and reading.
+
+    `readings` names the label readings that count in "mean" and "by_game" (default: every
+    reading in the cells). "by_convention" always lists every reading present.
+    """
+    present = list(dict.fromkeys(c["convention"] for c in cells))
+    counted = [k for k in present if readings is None or k in readings]
 
     def mean(rows):
-        return round(float(np.mean([row[key] for row in rows])), 4) if rows else None
+        values = [row[key] for row in rows if row.get(key) is not None]
+        return round(float(np.mean(values)), 4) if values else None
 
-    def pick(game=None, convention=None):
+    def pick(game=None, conventions=present):
         return [
             c
             for c in cells
-            if (game is None or c["game"] == game)
-            and (convention is None or c["convention"] == convention)
+            if (game is None or c["game"] == game) and c["convention"] in conventions
         ]
 
     games = sorted({c["game"] for c in cells})
     return {
-        "mean": mean(cells),
-        "by_convention": {k: mean(pick(convention=k)) for k in CONVENTIONS},
-        "by_game": {g: mean(pick(game=g)) for g in games},
-        "by_game_convention": {g: {k: mean(pick(g, k)) for k in CONVENTIONS} for g in games},
+        "mean": mean(pick(conventions=counted)),
+        "by_convention": {k: mean(pick(conventions=(k,))) for k in present},
+        "by_game": {g: mean(pick(g, counted)) for g in games},
+        "by_game_convention": {g: {k: mean(pick(g, (k,))) for k in present} for g in games},
+        "readings": counted,
     }
 
 
@@ -593,17 +658,22 @@ MIN_GAIN = 0.02  # mean spellF1 a change must add
 MIN_GAMES_WON = 2 / 3  # share of the external matches it must win on
 
 
-def compare(candidate: list[dict], reference: list[dict]) -> dict:
+def compare(candidate: list[dict], reference: list[dict], readings=None) -> dict:
     """Paired comparison of two `evaluate` results under the acceptance rule fixed in advance.
 
     A change is accepted if its mean spellF1 gain is at least `MIN_GAIN`, it does not lose under
-    either label convention, and it wins on at least `MIN_GAMES_WON` of the matches.
+    any label reading that counts (`readings`, default all), and it wins on at least
+    `MIN_GAMES_WON` of the matches. Readings that do not count are reported in
+    `gain_reported_only`.
     """
-    a, b = summarise(candidate), summarise(reference)
+    a, b = summarise(candidate, readings=readings), summarise(reference, readings=readings)
     gain = round(a["mean"] - b["mean"], 4)
-    by_convention = {
-        k: round(a["by_convention"][k] - b["by_convention"][k], 4) for k in CONVENTIONS
+    every = {
+        k: round(a["by_convention"][k] - b["by_convention"][k], 4)
+        for k in a["by_convention"]
+        if k in b["by_convention"]
     }
+    by_convention = {k: v for k, v in every.items() if k in a["readings"]}
     by_game = {g: round(a["by_game"][g] - b["by_game"][g], 4) for g in a["by_game"]}
     won = sum(value > 0 for value in by_game.values())
     accepted = (
@@ -614,6 +684,7 @@ def compare(candidate: list[dict], reference: list[dict]) -> dict:
     return {
         "gain": gain,
         "gain_by_convention": by_convention,
+        "gain_reported_only": {k: v for k, v in every.items() if k not in a["readings"]},
         "gain_by_game": by_game,
         "games_won": won,
         "n_games": len(by_game),

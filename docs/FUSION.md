@@ -210,3 +210,55 @@ files that only existed locally. Section 7 records how that was closed.
    parameter (`labels`), `raw` by default: the two alternatives measured so far gain under one
    reading and lose under the other (docs/DECISIONS.md).
 
+
+## 8. Choosing between version 1 and version 3 (rule written on 2026-11-14, before measuring)
+
+Two candidates are built for the last days. **Version 1** is the cautious one: the hybrid of
+section 7, changed only by something that gains on the Metrica matches and loses nowhere.
+**Version 3** is a bet on how the private ground truth reads "possession": it may lose under one
+reading if it gains more under the other. This section fixes how the choice is made, so that the
+choice cannot be fitted to the result. It replaces an earlier draft whose thresholds had been
+written after seeing version 3's scores; an independent review of the plan pointed that out.
+
+**What each set of matches is for.**
+
+| Set | Role | Why |
+|---|---|---|
+| Metrica sample games, profiles `label_free` and `match_like`, readings `touch` and `controlled` | evidence | same provider as the competition tracking; the model has seen none of them |
+| IDSSE, each match scored by a model trained without it, readings `controlled1.5` and `controlled3.5` | veto | another provider, ball in view during stoppages; but both readings lack very short possessions, which favours models trained on merged labels, so it cannot be evidence for version 3 |
+| PFF, 16 held-out matches | veto | real tracking noise instead of a simulated one; the provider's own possession definition |
+| The competition match, no labels | sanity ranges | the only look at the real tracker |
+| `published_baselines` profile | reported only | it is fitted to scores computed from the private ground truth (RULES.md: nothing derived from it may be used), so it decides nothing from now on |
+
+`match_like` is a degradation profile fitted to label-free statistics of the competition match
+(how often our two tracks agree on possessions and on the team, the model's confidence about the
+team, the share of frames without a ball). It takes the place `published_baselines` had.
+
+**The rule.**
+
+1. Weights of the two label readings: 50/50. The definition in CHALLENGE.md and the possession
+   density of the public window and of the PFF labels (4.2 and 4.0 per live minute) speak for
+   `controlled`; the published baseline scores are reproduced slightly better under `touch`.
+   Hard rule 2 forbids choosing a version by the public window, so the default stays 50/50. Other
+   weights are the owner's decision and have to be given before measuring.
+2. The version 3 candidate comes from a family fixed here: training labels `raw`, `tau1`, `tau2`,
+   decoder cost of a change of team 5, 8, 12, cost of a stoppage 12, 20; plus any PFF-trained
+   variant that turns out to gain under one reading and lose under the other. The member is
+   chosen on two Metrica matches and scored on the third. Nothing is tuned on IDSSE or PFF.
+3. Version 3 is chosen if its weighted mean difference to version 1 over the evidence is at
+   least 0.02 and it loses more than 0.02 in no evidence scenario (profile x reading).
+4. IDSSE and the PFF test matches can each veto it: the mean difference there has to be at least
+   0, with a win on most matches (5 of 7, 9 of 16).
+5. Its label-free footprint on the competition match has to stay inside these ranges: 3.5 to 7
+   possessions per live minute, dead share within 3 percentage points of version 1. In every
+   other case version 1 is submitted.
+
+**A change to version 1** needs: a gain of at least 0.02 on the Metrica matches under both
+evidence profiles, no loss under either reading, a win on two of the three matches, and no loss
+on IDSSE. A gain on the PFF test matches does not count for a model trained on PFF.
+
+**Known before measuring.** The favourite of the version 3 family so far, labels `tau2` with
+costs 8 and 20, loses 0.030 under `label_free` / `touch` (docs/DECISIONS.md, 2026-11-14), so
+as things stand it fails point 3. Its training labels also contradict the
+organisers' reference: they merge other-team spells under 2 s into their neighbours, and the
+public window keeps such spells of 0.8 s and 1.3 s. The expected outcome is version 1.

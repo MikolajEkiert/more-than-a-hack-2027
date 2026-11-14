@@ -132,6 +132,18 @@ def seed_model_cache(models_dir: Path = MODELS_DIR, cache_dir: Path | None = Non
 
 
 @cache
+def _setup():
+    """(degradation parameters, feature function, training options) of the final configuration."""
+    from possession import loader  # here, not at the top: loader reads the match data lazily
+
+    degrade, _, submission, package_features = _package()
+    params = degrade.calibrated_params(container(loader.load_match(verbose=False)))
+    feature_fn = package_features.FEATURE_SETS[submission.FINAL["features"]]
+    train_cfg = {"weights": True} if submission.FINAL["weights"] else None
+    return params, feature_fn, train_cfg
+
+
+@cache
 def model(labels: str = "raw"):
     """(booster, feature function) of the package's final configuration, trained on `labels`.
 
@@ -139,14 +151,10 @@ def model(labels: str = "raw"):
     call downloads the open data, degrades and featurises it and trains (minutes); later calls,
     in this process or another, load the cached model.
     """
-    from possession import loader  # here, not at the top: loader reads the match data lazily
-
-    degrade, _, submission, package_features = _package()
+    _, _, submission, _ = _package()
     if not os.environ.get("MTAH_NO_CACHE"):
         seed_model_cache()
-    params = degrade.calibrated_params(container(loader.load_match(verbose=False)))
-    feature_fn = package_features.FEATURE_SETS[submission.FINAL["features"]]
-    train_cfg = {"weights": True} if submission.FINAL["weights"] else None
+    params, feature_fn, train_cfg = _setup()
     booster = submission.train_final(
         feature_fn, label_function(labels), params, log=_log, train_cfg=train_cfg
     )
@@ -154,11 +162,132 @@ def model(labels: str = "raw"):
 
 
 def probabilities(match: Match, labels: str = "raw") -> np.ndarray:
-    """(n, 3) float64: P(H), P(A), P(D) per frame from the supervised model, memoised on `match`."""
+    """(n, 3) float64: P(H), P(A), P(D) per frame from the supervised model, memoised on `match`.
+
+    A match the model was trained on is never scored by that model. Such a match carries a
+    function under `HELD_OUT` that returns the prediction of a model trained without it
+    (`idsse_conditions`), and that is what is returned, whatever `labels` is asked for. A match
+    named like a training match that has no such function is an error, not a silent leak.
+    """
 
     def compute():
+        held_out = match._cache.get(HELD_OUT)
+        if held_out is not None:
+            return np.asarray(held_out(labels), dtype=float)
+        if match.game.startswith(TRAINING_PREFIXES):
+            raise RuntimeError(
+                f"{match.game} is a training match of the supervised model and has no held-out "
+                "prediction attached; score it through supervised.idsse_conditions"
+            )
         booster, feature_fn = model(labels)
         _, _, submission, _ = _package()
         return np.asarray(submission.predict_match(booster, feature_fn, container(match)), float)
 
     return features._memo(match, ("supervised", labels), compute)
+
+
+# -- the training matches as a second validation set, each scored by a model that never saw it --
+
+FPS = 25  # the package resamples every match to 25 frames per second
+HELD_OUT = "supervised_held_out"  # Match._cache key: labels -> (n, 3) from a model without it
+PACKAGE_LABELS = "supervised_package_labels"  # Match._cache key: labels -> the package's decode
+TRAINING_PREFIXES = ("IDSSE-", "PFF-")  # how the package names the matches it is trained on
+# Label readings the IDSSE matches are scored under. The first two have the possession density of
+# the two Metrica readings (6.1 and 4.15 per live minute against 6.0 and 4.05) and are nobody's
+# training labels; the provider's own flags ("raw", 8.3 per live minute) are reported only.
+IDSSE_READINGS = ("controlled1.5", "controlled3.5", "raw")
+IDSSE_RULE_READINGS = IDSSE_READINGS[:2]
+
+
+def to_match(m: dict) -> Match:
+    """A container of the package as a `Match`: the reverse of `container`.
+
+    The container has no speed column; player speed is recomputed from the positions the same
+    way as for the other external matches (`validation.speeds`).
+    """
+    from possession.validation import speeds
+
+    xy = np.stack([m["px"], m["py"]], axis=2).astype(np.float64)
+    n = len(xy)
+    match = Match(
+        game=str(m["name"]),
+        fps=FPS,
+        pitch=(float(m["pitch"][0]), float(m["pitch"][1])),
+        ball=np.column_stack([m["bx"], m["by"], np.full(n, np.nan)]).astype(np.float64),
+        players=np.concatenate([xy, speeds(xy, FPS)[..., None]], axis=2),
+        team_of_track=np.asarray(m["team"], dtype=np.int8),
+        half=np.asarray(m["half"], dtype=np.int8),
+        tagging=None,
+    )
+    match.validate()
+    return match
+
+
+@cache
+def _leave_one_out(labels: str, seed: int) -> dict:
+    """Every IDSSE match predicted by a model trained on the other six (the package's harness).
+
+    {"probs": {name: (T, 3)}, "package": {name: codes}}; "package" is the package's own plain
+    Viterbi with the penalties chosen on the other six matches, kept for comparison.
+    """
+    params, feature_fn, train_cfg = _setup()
+    from solution import evaluate_external as ev
+
+    res = ev.run(
+        feature_fn=feature_fn,
+        label_fn=label_function(labels),
+        seed=seed,
+        degrade_params=params,
+        bootstrap=0,
+        log=_log,
+        light=True,
+        train_cfg=train_cfg,
+    )
+    names = [d["m"]["name"] for d in res["data"]]
+    return {
+        "probs": dict(zip(names, res["probs"], strict=True)),
+        "package": dict(zip(names, res["preds"], strict=True)),
+    }
+
+
+def idsse_conditions(seeds=(0, 1), readings=IDSSE_READINGS):
+    """Yield (game, seed, match, {reading: labels}) for the seven IDSSE matches.
+
+    The tracking is degraded exactly as for training (the package's degradation, calibrated on
+    the competition tracking). The labels are derived from the provider's flags, never from the
+    labels a model was trained on. Each match can only be scored out of fold: see `probabilities`.
+    """
+    params, feature_fn, _ = _setup()
+    _, labels, _, _ = _package()
+    from solution import evaluate_external as ev
+    from solution import idsse
+
+    letters = np.array(pm.LABELS)
+    for seed in seeds:
+        prepared = ev.prepare(
+            idsse.load_all(),
+            feature_fn,
+            labels.raw,
+            seed=seed,
+            degrade_params=params,
+            log=lambda text: None,
+            swap=False,
+        )
+        for entry in prepared:
+            m = entry["m"]  # degraded tracking with the provider's own labels
+            name = str(m["name"])
+            match = to_match(m)
+            match._cache[HELD_OUT] = _from_fold("probs", name, seed)
+            match._cache[PACKAGE_LABELS] = _from_fold("package", name, seed, letters)
+            truths = {r: letters[np.asarray(label_function(r)(m))].astype("<U1") for r in readings}
+            yield name.split("_deg")[0].lower(), seed, match, truths
+
+
+def _from_fold(kind: str, name: str, seed: int, letters=None):
+    """labels -> the out-of-fold result of `kind` for the match `name` under `seed`."""
+
+    def get(labels: str = "raw"):
+        value = _leave_one_out(labels, seed)[kind][name]
+        return value if letters is None else letters[np.asarray(value)].astype("<U1")
+
+    return get

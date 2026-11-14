@@ -7,6 +7,7 @@ import pytest
 
 from possession import validation
 from possession.match import AWAY, HOME, Match
+from tests.conftest import make_match
 
 META = """<root>
   <PlayerChannels>
@@ -337,3 +338,42 @@ def test_table_marks_clean_and_degraded_external_scores():
     lines = experiments.table(entries).splitlines()
     assert "0.1234c" in lines[2]
     assert "0.4321d" in lines[3]
+
+
+def test_summaries_follow_the_readings_in_the_cells():
+    """Suites other than Metrica score other label readings; only some of them count."""
+
+    def cells(scores):
+        return [
+            {"game": g, "seed": 0, "convention": k, "spellF1": v} for (g, k), v in scores.items()
+        ]
+
+    games = ("a", "b", "c")
+    reference = cells({(g, k): 0.50 for g in games for k in ("dense", "sparse", "raw")})
+    better = cells(
+        {(g, k): (0.40 if k == "raw" else 0.56) for g in games for k in ("dense", "sparse", "raw")}
+    )
+    counted = ("dense", "sparse")
+
+    summary = validation.summarise(better, readings=counted)
+    assert summary["mean"] == pytest.approx(0.56)  # "raw" is reported, not averaged in
+    assert summary["by_convention"]["raw"] == pytest.approx(0.40)
+    assert summary["readings"] == ["dense", "sparse"]
+
+    verdict = validation.compare(better, reference, readings=counted)
+    assert verdict["accepted"] and verdict["gain"] == pytest.approx(0.06)
+    assert verdict["gain_reported_only"] == {"raw": pytest.approx(-0.10)}
+    assert not validation.compare(better, reference)["accepted"]  # with "raw" counted it loses
+
+
+def test_stoppage_context_separates_stoppages_with_the_ball_in_view():
+    match = make_match(n=400, ungraded_head=0, ball_missing=0.5)
+    seen = match.ball_seen
+    truth = np.where(np.arange(400) < 200, "D", "H")
+    labels = np.where(seen, "H", "D")  # calls play wherever the ball is tracked
+    context = validation.stoppage_context(labels, truth, match)
+    assert context["stoppage_ball_seen"] == pytest.approx(seen[:200].mean(), abs=1e-4)
+    assert context["seen_stoppage_called_live"] == 1.0
+    assert context["lost_stoppage_called_live"] == 0.0
+    nothing_dead = validation.stoppage_context(labels, np.full(400, "H"), match)
+    assert nothing_dead["stoppage_ball_seen"] is None
