@@ -8,10 +8,13 @@ reviewer (it is read from that trusted copy, never from the PR under review).
   The local gate is `make check` + pre-commit.
 - **`.claude/settings.json` missing** (Claude Code hooks: organiser-file protection, data guard,
   session context). It is pending the repo owner's approval and will come in a separate commit.
-- **Data guard is off by the team's decision.** Gaps in the guard's heuristics (scripts/agent_hooks.py)
-  are low priority while it is off; report only a clear bypass that is new in this PR.
-- **Baseline equivalence on the official data is not verified yet** (tests/test_baseline_equivalence.py
-  is skipped until someone runs it with the data). docs/DECISIONS.md says so.
+- **Data guard is off by the owner's decision**, also now that the official dataset is in `data/`
+  (docs/DECISIONS.md, 2026-11-14; AGENTS.md hard rule 7 was reworded to "aggregates only"). Do
+  not report the guard being off, and treat gaps in its heuristics (scripts/agent_hooks.py) as
+  low priority. What is still a finding: code, a committed file or a logged run that prints or
+  stores raw rows of the match data.
+- **`tests/test_baseline_equivalence.py` is skipped where the match data is absent.** It was
+  verified on the data on 2026-11-13 (docs/DECISIONS.md).
 - **`solution/` and `notebooks/` are the supervised track's package, merged as written** (owner's
   decision, docs/DECISIONS.md 2026-11-14 task 08). Do not report style, structure, duplication or
   missing-test findings there. The pipeline calls only its features and model
