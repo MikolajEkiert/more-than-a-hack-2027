@@ -143,3 +143,43 @@ def test_gap_aggregates(match):
     # sources are reported side by side so a disagreement like the real data's is visible
     assert out["ball_speed_m_s"]["atd_column"]["p50"] == pytest.approx(5.0)
     assert out["ball_speed_m_s"]["from_positions"]["n"] > 0
+
+
+def test_kickoff_audit_counts_setups_and_tags():
+    from dataclasses import replace
+
+    from possession import features, inspect_data
+
+    match = make_match(n=2000, ungraded_head=0)
+    assert inspect_data.kickoffs(match)["tagging_available"] is False
+
+    found = {
+        "start": np.array([100, 900]),
+        "stop": np.array([200, 1000]),
+        "kick": np.array([180, 990]),
+    }
+    tags = [
+        {
+            "code": "SET PIECES",
+            "start_frame": 100,
+            "end_frame": 225,
+            "tags": {"Type": "Kick Off (Start)"},
+        },
+        {
+            "code": "SET PIECES",
+            "start_frame": 1500,
+            "end_frame": 1625,
+            "tags": {"Type": "Kick Off (After Goal)"},
+        },
+        {"code": "SET PIECES", "start_frame": 400, "end_frame": 525, "tags": {"Type": "Throw-in"}},
+    ]
+    tagged = replace(match, tagging=tags, _cache={})
+    key = ("kickoffs", 3.0, 0.9, 7, 1.0, 15.0, 1.5, 2.0, 1.8)  # features.kickoffs' defaults
+    tagged._cache[key] = found
+    assert features.kickoffs(tagged) is found
+    out = inspect_data.kickoffs(tagged)
+    assert out["setups_found"] == 2 and out["tagged_kickoffs"] == 2  # the throw-in is not one
+    assert out["tagged_with_a_found_kick_within_10s"] == 1  # the second tag has no set-up near it
+    assert out["found_with_a_tag_within_10s"] == 1  # the second set-up has no tag near it
+    assert out["found_kick_after_tag_start_s"] == [3.2]  # frame 180 against a window from 100
+    assert out["setup_until_kick_s"] == [3.2, 3.6]

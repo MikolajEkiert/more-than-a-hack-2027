@@ -209,6 +209,56 @@ def tagging(match: Match) -> dict:
     }
 
 
+def kickoffs(match: Match) -> dict:
+    """The formation-based kick-off rule next to the kick-offs in Smart Tagging (aggregates only).
+
+    The tags are an independent source for the same events (two starts of a half and one after
+    each goal). A set-up the rule finds with no tagged kick-off near it would be a false stoppage
+    inside play; a tagged kick-off with no set-up near it is one the rule misses.
+    """
+    fps, graded = match.fps, match.graded
+    found = features.kickoffs(match)
+    starts, kicks = found["start"].tolist(), found["kick"].tolist()
+    out = {
+        "setups_found": len(kicks),
+        "setup_until_kick_s": sorted(
+            round((k - s) / fps, 1) for s, k in zip(starts, kicks, strict=True)
+        ),
+        "graded_share_waiting_for_kickoff": _rate(features.kickoff_wait(match), graded),
+    }
+    if match.tagging is None:
+        return {**out, "tagging_available": False}
+    tagged = [i for i in match.tagging if str(_tag(i, "Type")).lower().startswith("kick off")]
+    windows = [(i["start_frame"], i["end_frame"]) for i in tagged]
+    near = 10 * fps
+
+    def gap(frame, window):  # frames between `frame` and the window, 0 inside it
+        a, b = window
+        return 0 if a <= frame <= b else min(abs(frame - a), abs(frame - b))
+
+    return {
+        **out,
+        "tagging_available": True,
+        "tagged_kickoffs": len(tagged),
+        "tagged_kickoff_types": dict(sorted(_count(_tag(i, "Type") for i in tagged).items())),
+        "tag_window_s": sorted(round((b - a) / fps, 1) for a, b in windows),
+        "tagged_with_a_found_kick_within_10s": sum(
+            any(gap(k, w) <= near for k in kicks) for w in windows
+        ),
+        "found_with_a_tag_within_10s": sum(any(gap(k, w) <= near for w in windows) for k in kicks),
+        "found_kick_after_tag_start_s": sorted(
+            round((k - w[0]) / fps, 1) for w in windows for k in kicks if gap(k, w) <= near
+        ),
+    }
+
+
+def _count(values) -> dict:
+    out: dict = {}
+    for value in values:
+        out[value] = out.get(value, 0) + 1
+    return out
+
+
 def label_stats(labels, half: np.ndarray, fps: int) -> dict:
     """Aggregates of a submission's labels over the graded frames given by `half` (1, 2, 0)."""
     codes = pm.label_codes(labels)  # a label array or the DataFrame from read_label_csv
