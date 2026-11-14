@@ -1,3 +1,46 @@
+# culers — our entry for More than a Hack 2027, Phase 1
+
+This repository is team **culers**' solution. The organisers' own README follows below, unchanged.
+
+| | |
+|---|---|
+| What we submit | `culers.csv`: H / A / D for every frame of BAR-ATH |
+| Configuration | [`configs/hybrid_supervised.toml`](configs/hybrid_supervised.toml) |
+| sha256 of the file | `25f146c056a7f76b73ad9c5a35b85066930b44ba675715133681bc7b5e70a298` |
+| Technical document | [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md) |
+| How we decided things | [`docs/DECISIONS.md`](docs/DECISIONS.md), one line per decision, including what was dropped |
+
+## Regenerate the submitted file
+
+```bash
+uv sync                                   # Python 3.11, every dependency pinned by uv.lock
+# unpack the data bundle into ./data as DATA.md describes (or set MTAH_DATA_DIR)
+make submit CONFIG=configs/hybrid_supervised.toml TEAM=culers
+# without make: uv run possession submit configs/hybrid_supervised.toml --team culers
+```
+
+It writes `submission/culers.csv`, runs the pipeline a second time from a fresh parse, requires the
+same sha256, calls the organisers' validator and prints the sha256 above. Under a minute.
+
+- **The trained model is committed** in [`models/`](models/) (2.7 MB), so nothing is downloaded.
+  To retrain it from scratch instead (2.63 GB of open data, about four minutes):
+  `MTAH_NO_CACHE=1 uv run possession run configs/hybrid_supervised.toml`.
+- **`python -m solution.submission` and the notebooks in `notebooks/` are not the submission
+  path.** They are the supervised track's own experiments, use another decoder and produce
+  another file. The pipeline takes that package's features and model only
+  ([`src/possession/supervised.py`](src/possession/supervised.py)).
+
+## What is whose
+
+| Path | What it is |
+|---|---|
+| `src/possession/`, `configs/`, `tests/`, `docs/`, `tasks/`, `experiments/runs/` | our pipeline, its configurations, tests, documents and the log of every run |
+| `solution/`, `notebooks/` | the supervised track's package: features and a LightGBM trained on open data |
+| `models/` | the trained model of the submitted configuration |
+| `evaluation/`, `starter/`, `games.py`, and the documents below | the organisers', unchanged |
+
+---
+
 # More than a Hack 2027 — Phase 1: Ball Possession
 
 **Organised by [Metrica Sports](https://metrica-sports.com), [FC Barcelona](https://www.fcbarcelona.com)
