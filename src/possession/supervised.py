@@ -882,20 +882,24 @@ def _team_stack(prepared: list, blocks: list, skip=None) -> tuple[np.ndarray, np
     return np.concatenate(xs), np.concatenate(ys)
 
 
-def _fit_team(prepared_lists: list, blocks_lists: list, cfg: dict, rounds: int, skip=None):
-    """`ev.fit` / `train_final` on the prepared matches with the block appended: rows of every
-    list (one per noise seed) except the matches in `skip`, the package's sample weights."""
+def _team_rows(prepared: list, cfg: dict, skip=None) -> tuple:
+    """(x, y, sample weights) of the prepared matches of one noise seed except `skip`, the block
+    appended: what `ev.fit` and `train_final` stack for that seed."""
     from solution import evaluate_external as ev
 
-    xs, ys, ws = [], [], []
-    for prepared, blocks in zip(prepared_lists, blocks_lists, strict=True):
-        x, y = _team_stack(prepared, blocks, skip=skip)
-        xs.append(x)
-        ys.append(y)
-        ws.append(ev.stack_weights(prepared, skip, ev.TRAIN_STRIDE, cfg))
-    x, y = np.concatenate(xs), np.concatenate(ys)
-    del xs
-    weight = np.concatenate(ws) if cfg["weights"] else None
+    x, y = _team_stack(prepared, _team_blocks(prepared), skip=skip)
+    return x, y, ev.stack_weights(prepared, skip, ev.TRAIN_STRIDE, cfg)
+
+
+def _fit_team(parts: list, cfg: dict, rounds: int):
+    """LightGBM on the rows of every part (one per noise seed, in order), with the package's
+    parameters and, if the configuration asks for them, its sample weights."""
+    from solution import evaluate_external as ev
+
+    x = np.concatenate([p[0] for p in parts])
+    y = np.concatenate([p[1] for p in parts])
+    weight = np.concatenate([p[2] for p in parts]) if cfg["weights"] else None
+    parts.clear()  # the caller's rows are now in x: free them before LightGBM copies x
     return ev.train(x, y, weight=weight, rounds=rounds)
 
 
@@ -916,7 +920,9 @@ def _team_key(labels: str, features: str) -> list:
     from solution import labels as package_labels
 
     cfg = dict(ev.DEFAULT_CFG, **(train_cfg or {}))
-    code = "".join(inspect.getsource(fn) for fn in (_team_stack, _fit_team, _team_blocks))
+    code = "".join(
+        inspect.getsource(fn) for fn in (_team_stack, _team_blocks, _team_rows, _fit_team)
+    )
     return [
         features,
         team_features.block_key(),
@@ -949,14 +955,14 @@ def _train_final_team(labels: str, features: str):
     label_fn = label_function(labels)
 
     def fit():
-        prepared = [
-            ev.prepare(
-                idsse.load_all(), feature_fn, label_fn, seed=s, degrade_params=params, log=_log
+        parts = []
+        for seed in seeds:  # one seed's matches in memory at a time, as in `train_final`
+            prepared = ev.prepare(
+                idsse.load_all(), feature_fn, label_fn, seed=seed, degrade_params=params, log=_log
             )
-            for s in seeds
-        ]
-        blocks = [_team_blocks(p) for p in prepared]
-        return _fit_team(prepared, blocks, cfg, _team_rounds(features))
+            parts.append(_team_rows(prepared, cfg))
+            del prepared
+        return _fit_team(parts, cfg, _team_rounds(features))
 
     key = package_cache.digest(
         "team-final", *_team_key(labels, features), list(seeds), sorted(idsse.MATCHES)
@@ -980,7 +986,6 @@ def _team_folds(labels: str, seed: int, features: str) -> dict:
     label_fn = label_function(labels)
     raws = idsse.load_all()
     prepared = ev.prepare(raws, feature_fn, label_fn, seed=seed, degrade_params=params, log=_log)
-    blocks = _team_blocks(prepared)
     inputs = {"plain": prepared}
     inputs["auto"] = _idsse_inputs(raws, "auto", seed, feature_fn, label_fn, params, swap=False)
     run_key = package_cache.digest(
@@ -996,7 +1001,8 @@ def _team_folds(labels: str, seed: int, features: str) -> dict:
         }
         booster = None
         if not (_cache_on() and all(path.is_file() for path in paths.values())):
-            booster = _fit_team([prepared], [blocks], cfg, _team_rounds(features), skip=k)
+            parts = [_team_rows(prepared, cfg, skip=k)]
+            booster = _fit_team(parts, cfg, _team_rounds(features))
             _log(f"team fold {k} of seed {seed} ({features}) trained")
         for inp, path in paths.items():
             entry = inputs[inp][k]
