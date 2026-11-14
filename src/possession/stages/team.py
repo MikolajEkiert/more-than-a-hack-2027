@@ -223,7 +223,7 @@ def blend(match: Match, sources: list = ("touch_episodes",), weights: list = ())
 
 
 @register("team", "supervised")
-def supervised(match: Match, labels: str = "raw") -> np.ndarray:
+def supervised(match: Match, labels: str = "raw", data: str = "idsse") -> np.ndarray:
     """P(home has the ball | play) = P(H) / (P(H) + P(A)) from the supervised model in solution/.
 
     The same model, and the same `labels`, as `ball_state.supervised`; see that method and
@@ -232,4 +232,4 @@ def supervised(match: Match, labels: str = "raw") -> np.ndarray:
     from possession import fusion
     from possession import supervised as model
 
-    return fusion.class_evidence("team", *model.probabilities(match, labels).T)
+    return fusion.class_evidence("team", *model.probabilities(match, labels, data).T)

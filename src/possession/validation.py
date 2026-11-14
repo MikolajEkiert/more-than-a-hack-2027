@@ -539,7 +539,7 @@ def score(predicted: np.ndarray, truth: np.ndarray, bootstrap: int = 0) -> dict:
     return out
 
 
-SUITES = ("metrica", "idsse")
+SUITES = ("metrica", "idsse", "pff")
 
 
 def rule_readings(suite: str = "metrica") -> tuple[str, ...]:
@@ -554,6 +554,10 @@ def rule_readings(suite: str = "metrica") -> tuple[str, ...]:
         from possession import supervised
 
         return supervised.IDSSE_RULE_READINGS
+    if suite == "pff":
+        from possession import supervised
+
+        return supervised.PFF_READINGS
     raise KeyError(f"unknown suite {suite!r}; known: {SUITES}")
 
 
@@ -568,6 +572,8 @@ def conditions(
     "idsse": the seven matches the supervised model is trained on, degraded as for training
     (`profile` does not apply), each scored by a model that never saw it
     (`supervised.idsse_conditions`). Only seeds 0 and 1 exist there.
+    "pff": the 16 PFF matches kept out of every training set, with their tracking as delivered
+    (real broadcast tracking; neither `profile` nor `seeds` applies).
     """
     if suite == "idsse":
         from possession import supervised
@@ -575,6 +581,14 @@ def conditions(
         wanted = None if games is None else {str(g).lower() for g in games}
         seeds = tuple(s for s in seeds if s in (0, 1)) or (0,)
         for game, seed, match, truths in supervised.idsse_conditions(seeds=seeds):
+            if wanted is None or game in wanted:
+                yield game, seed, match, truths
+        return
+    if suite == "pff":
+        from possession import supervised
+
+        wanted = None if games is None else {str(g).lower() for g in games}
+        for game, seed, match, truths in supervised.pff_conditions():
             if wanted is None or game in wanted:
                 yield game, seed, match, truths
         return

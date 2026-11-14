@@ -353,7 +353,7 @@ def main(argv=None) -> int:
     p.add_argument("--games", default="", help="comma-separated; default: all external matches")
     p.add_argument("--seeds", default="0,1,2", help="seeds of the degradation")
     p.add_argument("--profile", default="label_free", help="a name in configs/degradation/")
-    p.add_argument("--suite", default="metrica", choices=["metrica", "idsse"], help="which set")
+    p.add_argument("--suite", default="metrica", choices=["metrica", "idsse", "pff"])
     p.add_argument("--clean", action="store_true", help="do not degrade the tracking")
     p.add_argument("--against", help="config to compare with under the acceptance rule")
     p.add_argument("--note", default="")
