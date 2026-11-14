@@ -1,5 +1,5 @@
 ---
-status: doing
+status: review
 owner: MikolajEkiert (Claude)
 stage: ball_state, team, infra
 ---
@@ -33,6 +33,9 @@ time, so only the mixed member (noise seed 0 as before, seed 1 in the automatic 
 - [x] the regime transform never touches labels or players and is deterministic (tests)
 - [x] every new learned part is out of fold on IDSSE; the fold loop reproduces the package's
       harness bit for bit for the plain regime (runtime check)
-- [ ] M3 and M4 measured on all sets; G3 checked; decision by the rule logged
+- [x] M3 and M4 measured on all sets; G3 checked; results logged (the decision is taken over the
+      whole family with task 13)
 
 ## Log
+- 2026-11-14: M3 +0.009 / -0.001 on Metrica, 0.000 IDSSE (2/7), +0.018 PFF; M4 within +-0.003
+  everywhere. G3 fails (PFF +0.018, invented stoppages with the ball tracked -28%).

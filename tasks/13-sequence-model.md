@@ -1,5 +1,5 @@
 ---
-status: doing
+status: review
 owner: MikolajEkiert (Claude)
 stage: ball_state, team, infra
 ---
@@ -34,7 +34,10 @@ that sees about 51 s around each frame, trained in the mixed ball regime chosen 
 
 ## Acceptance criteria
 - [x] numpy inference tested against a naive convolution; importable without torch
-- [ ] G4 on every exported network
-- [ ] M5 and M6 measured with scripts/family_grid.py; decision by the rule
+- [x] G4 on every exported network (final: 9e-15)
+- [x] M5 and M6 measured with scripts/family_grid.py; decision by the rule (version 1 stays)
 
 ## Log
+- 2026-11-14: 14 fold networks and the final one trained on the CPU (1 h 22 min); G4 9e-15.
+- 2026-11-14: M6 +0.025 / +0.018 on Metrica (held out), -0.001 IDSSE (3/7), +0.044 PFF (16/16).
+  The rule keeps version 1 (+0.018 < +0.02 under match_like; IDSSE veto).
