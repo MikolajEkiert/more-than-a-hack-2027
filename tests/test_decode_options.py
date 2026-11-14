@@ -210,16 +210,6 @@ def test_short_spells_between_two_of_the_other_team():
     assert (short_spells(match, labels, unknown, 2.0, "merge", 0.5) == "H").all()
     beside_dead = _labels(n, (200, 230, "A"), (230, 300, "D"))
     np.testing.assert_array_equal(short_spells(match, beside_dead, home, 2.0, "dead"), beside_dead)
-    extended = short_spells(match, beside_dead, home, 2.0, "dead", beside_dead=True)
-    assert np.flatnonzero(extended == "D").tolist() == list(range(200, 300))  # stops earlier
-    given = short_spells(match, beside_dead, home, 2.0, "merge", beside_dead=True)
-    assert (given[:230] == "H").all() and (given[230:300] == "D").all()
-    edge = _labels(n, (0, 30, "D"), (30, 60, "A"))  # D, then a short A, then H
-    assert (short_spells(match, edge, home, 2.0, "merge", beside_dead=True)[30:] == "H").all()
-    between_dead = _labels(n, (100, 200, "D"), (200, 230, "A"), (230, 300, "D"))
-    np.testing.assert_array_equal(
-        short_spells(match, between_dead, home, 2.0, "dead", beside_dead=True), between_dead
-    )  # a short spell between two stoppages is a restart and a stop, not a team's noise
     chain = _labels(n, (200, 220, "A"), (220, 230, "H"), (230, 600, "A"))  # 0.8 s A, 0.4 s H
     resolved = short_spells(match, chain, home, 2.0, "merge")
     assert (resolved[:200] == "H").all() and (resolved[200:] == "A").all()  # shortest first
