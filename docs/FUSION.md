@@ -354,3 +354,64 @@ without any use of the published scores.
 **A correction to section 8.** The rule quotes 4.0 possessions per live minute for the PFF
 labels. That was one match; over all 64 it is 4.7 (mean possession 13.1 s). The rule itself does
 not depend on the figure.
+
+## 10. Stoppages: training regime, test-time augmentation, a temporal model
+
+Written on 2026-11-14. The family and the rule below were fixed before any member was measured.
+The gates were evaluated in task 11, and G2's statistic was replaced during it, after the match's
+moving-ball share had been seen ("The gates", below; docs/DECISIONS.md, task 11).
+
+**Why.** On the 16 PFF test matches, another team's ball-state evidence in place of ours (our team
+evidence and decoder kept) raises spellF1 from 0.773 to 0.80-0.84, and true stoppages with our team
+evidence would give +0.07 on both Metrica profiles. Our training matches (IDSSE as degraded by the
+package) lose the ball without regard to stoppages; automatic tracking loses it during them
+(docs/DECISIONS.md, task 11). Gate G2 of task 11 found that the competition match loses the ball
+almost only during stoppages but keeps it in view during about a quarter of its stoppage time, so
+of the regime variants only the mixed one is measured.
+
+**The family** (fixed; the team evidence is version 1's in every member except M4):
+
+| member | configuration | what changes |
+|---|---|---|
+| M3 | `configs/hybrid_regime_mix.toml` | ball-state evidence from a LightGBM trained with noise seed 0 as before and seed 1 in the automatic-ball regime `auto_lf` (`possession/regime.py`) |
+| M4 | `configs/hybrid_tta.toml` | version 1 with test-time augmentation in both stages: the prediction averaged with that of the match with home and away exchanged |
+| M5 | `configs/hybrid_sequence_blend.toml` | ball-state evidence: version 1's LightGBM and a temporal network (task 13, trained in the M3 regime) at weights 0.5 and 0.5, plus the kick-off rule |
+| M6 | `configs/hybrid_sequence.toml` | ball-state evidence: the temporal network alone, plus the kick-off rule |
+
+M1 and M2 (regimes `auto_lf` and `auto_ml` alone) are dropped by gate G2 and are not measured. M5
+and M6 exist only if task 13 passes its numerical check (G4).
+
+**The rule** (a change to version 1, section 8, made precise):
+
+1. Evidence: the three Metrica matches under `label_free` and `match_like`, readings `touch` and
+   `controlled`. The member is chosen on two matches (mean over both profiles and both readings) and
+   scored on the third; the decision uses these held-out differences, not the in-sample ones.
+2. The held-out gain must be at least +0.02 under each of the two profiles, with no loss under
+   either reading in either profile, and the member must win on at least two of the three matches.
+3. Vetoes: IDSSE out of fold, plain inputs (suite `idsse`): mean difference at least 0 and 5 of 7
+   matches won; PFF test matches: mean difference at least 0 and 9 of 16 won. The suite
+   `idsse_auto` (the held-out matches in the automatic-ball regime of `match_like`) is reported only.
+4. Footprint on the competition match: 3.5 to 7 possessions per live minute and a dead share between
+   0.35 and 0.50 (the true dead shares of the three labelled sets). The earlier "within 3 points of
+   version 1" would block exactly this kind of change.
+5. Otherwise version 1 stays. Every member is logged in docs/DECISIONS.md whatever its result.
+
+**Mechanism check, not a decision (G3).** M3 should cut the stoppages it invents with the ball
+tracked on PFF; if it does not, only bugs are fixed, nothing is tuned.
+
+**The gates**, as far as the repository records them:
+
+- **G1 (oracle bound).** spellF1 with the true stoppages as ball-state evidence (the hybrid's own
+  team evidence and decoder, `scripts/deadball_errors.py`) minus the hybrid's, per set. No
+  numerical threshold was written down before measuring. Against the noise band (±0.04): Metrica
+  `label_free` +0.070, `match_like` +0.072 and PFF +0.100 clear it; IDSSE out of fold +0.038 does
+  not.
+- **G2 (regime of the match).** Fixed during task 11, after the planned moving-ball statistic
+  failed to separate true from invented stoppages. Statistic S: the share of frames with running
+  players (90th percentile of their speeds, 1 s mean, at least 2.5 m/s). f = (S_match - S_dead) /
+  (S_live - S_dead), the share of play, with S_dead and S_live from the labelled sets with tracked
+  players (Metrica, IDSSE). f < 0.5: only M3 is run and the IDSSE veto uses plain `idsse`. The
+  other branch (M1 and M2 run) is not written down further. The references quoted so far are for
+  all true stoppages, not for stoppages with a tracked ball (docs/DECISIONS.md, task 11).
+- **G3.** The mechanism check above.
+- **G4.** Task 13's numerical check. Not yet defined; it belongs in task 13's file.

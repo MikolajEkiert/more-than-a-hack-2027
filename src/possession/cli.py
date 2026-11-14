@@ -3,7 +3,8 @@
     possession methods                     what is already implemented (check before writing code)
     possession run configs/x.toml          produce, validate, diagnose and log one submission
     possession log                         the experiment log as a table
-    possession inspect {ball,players,gaps,tagging,kickoffs,labels} [--game G] [--csv F] [--json]
+    possession inspect {ball,players,gaps,tagging,kickoffs,labels,regime} [--game G] [--csv F]
+                       [--config C] [--json]
                                            aggregate statistics of the data or of a submission
                                            (rates, percentiles, histograms; never rows)
     possession validate CONFIG... [--suite S] [--profile P] [--against CONFIG] [--games a,b]
@@ -54,6 +55,14 @@ def cmd_inspect(args) -> int:
         if not args.csv:
             raise SystemExit("inspect labels needs --csv PATH")
         result = inspect_data.labels(args.csv, args.game)
+    elif args.topic == "regime":
+        from possession import config as config_mod
+        from possession import pipeline
+        from possession.loader import load_match
+
+        match = load_match(args.game, verbose=False)
+        labels = pipeline.run(config_mod.load(args.config), match).labels
+        result = inspect_data.regime(match, labels)
     else:
         from possession.loader import load_match
 
@@ -575,9 +584,14 @@ def main(argv=None) -> int:
     p.set_defaults(fn=cmd_log)
 
     p = sub.add_parser("inspect", help="aggregate statistics of the data (never prints rows)")
-    p.add_argument("topic", choices=["ball", "players", "gaps", "tagging", "kickoffs", "labels"])
+    p.add_argument(
+        "topic", choices=["ball", "players", "gaps", "tagging", "kickoffs", "labels", "regime"]
+    )
     p.add_argument("--game", default=None, help="default: games.GAME")
     p.add_argument("--csv", help="submission CSV (topic labels)")
+    p.add_argument(
+        "--config", default="configs/hybrid_supervised.toml", help="labels for topic regime"
+    )
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_inspect)
 
