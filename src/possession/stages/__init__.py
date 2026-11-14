@@ -4,4 +4,4 @@ To add a method: write a registered function in the module of its stage (or a ne
 package, imported below). Never add a second pipeline.
 """
 
-from possession.stages import ball_state, decode, team  # noqa: F401
+from possession.stages import ball_state, decode, mbr, team  # noqa: F401

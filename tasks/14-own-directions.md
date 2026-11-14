@@ -61,3 +61,36 @@ of tasks 12-13 (M6), so it cannot be blind to them.
 
 ## Log
 - 2026-11-14 · Claude · task opened; rules A and B written before measuring.
+- 2026-11-15 · Claude · V1, M3, M5, M6 re-measured with window scores (same means as before, so the
+  pipeline is deterministic). Paired intervals (5-95%) over (match, window) blocks: M5 is above V1
+  on all five sets (label_free +0.023 [+0.015, +0.028], match_like +0.012 [+0.006, +0.015], IDSSE
+  +0.004 [+0.002, +0.008] 7/7, IDSSE auto +0.025 7/7, PFF +0.039 16/16); M6 the same except plain
+  IDSSE -0.001 (3/7). Footprints: M5 5.31 possessions per live minute, dead 0.484; M6 5.25, 0.479.
+- 2026-11-15 · Claude · Minimum-Bayes-risk decoding (`decode.mbr`, src/possession/stages/mbr.py):
+  possessions chosen for the largest expected spellF1 under the posterior of the switching-cost
+  model, D elsewhere. Screened on Metrica `label_free`, seed 0 (V1 0.662 on the same cells):
+  sharpness 0.5 collapses (3-6x too many possessions), 1.0 gives 0.60-0.61, 2.0 0.644, 3.0-5.0
+  0.650-0.652. It converges to the Viterbi path as the posterior sharpens and never beats it: the
+  posterior of this model is not calibrated well enough to optimise expected spellF1 on. Dropped.
+- 2026-11-15 · Claude · The temporal network's team head (never measured before) hurts in every
+  form: alone -0.057 (label_free), -0.071 (PFF); blended 0.5/0.5 with the LightGBM -0.010
+  (label_free), -0.016 (match_like), -0.022 (IDSSE); 1/1 -0.034 (label_free). Probably its 5 Hz
+  output, interpolated to 25 fps, blurs the moment of a change. Dropped. It also trades one reading
+  for the other (0.5/0.5 on label_free: touch +0.012, controlled -0.031), i.e. more short spells.
+- 2026-11-15 · Claude · Team evidence of the mixed-regime LightGBM (M3's model, never used for the
+  team before): alone +0.005 / +0.002 / +0.003 / +0.000 / +0.003 (label_free, match_like, IDSSE,
+  IDSSE auto, PFF); averaged with V1's LightGBM 0.5 / 0.5 (`f1_mixteam_v1`) +0.006 [+0.002,
+  +0.008] 3/3, +0.002 2/3, +0.002 5/7, +0.001 5/7, +0.004 [+0.002, +0.008] 9/16. Small and
+  consistent: an ensemble effect, kept as a bundle candidate.
+- 2026-11-15 · Claude · Resource note: three workers plus four measurement processes filled the
+  12 GB swap (load average above 200). Measurements now run one process at a time with
+  OMP_NUM_THREADS=2; the remaining cells of the team-head members were not measured (dropped).
+- 2026-11-15 · Claude · Ball-state family, LightGBM / temporal network weights 0.7/0.3 (`bs_w73`),
+  0.5/0.5 (M5), 0.3/0.7 (`bs_w37`), 0/1 (M6), 1/1 (`bs_w11`). More weight on the network is better on
+  Metrica and PFF; plain IDSSE prefers some LightGBM. label_free +0.019 / +0.023 / +0.024 / +0.025 /
+  +0.022; match_like +0.009 / +0.012 / +0.015 / +0.018 / +0.004; IDSSE +0.003 / +0.004 / +0.002 /
+  -0.001 / +0.003; IDSSE auto +0.022 / +0.025 / +0.026 / +0.026 / +0.026; PFF +0.032 / +0.039 /
+  +0.042 / +0.044 / +0.036. Nested choice picks M6 on every held-out match. Rule A: version 1
+  stays (match_like +0.018 < +0.02, IDSSE veto -0.001, 3/7). Rule B: change to M6 (held-out mean
+  +0.021, 5% bound +0.015; PFF 16/16, IDSSE auto 7/7, plain IDSSE -0.001 within -0.010; footprint
+  5.25 per live minute, dead 0.479).

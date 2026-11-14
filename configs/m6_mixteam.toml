@@ -1,0 +1,20 @@
+# Task 14 bundle candidate: M6's ball state (temporal network + kick-off rule) and team evidence
+# averaged from V1's LightGBM and the mixed-regime LightGBM (M3's model), 0.5 / 0.5.
+name = "m6_mixteam"
+
+[ball_state]
+method = "blend"
+sources = ["sequence", "kickoff_wait"]
+
+[team]
+method = "blend"
+sources = ["supervised", { method = "supervised", regime = "mix_lf" }]
+weights = [0.5, 0.5]
+
+[decode]
+method = "switch_cost"
+turnover_cost = 5.0
+stop_cost = 12.0
+restart_cost = 12.0
+snap_start_s = 3.0
+snap_end_s = 3.0
