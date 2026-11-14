@@ -1,5 +1,5 @@
 ---
-status: doing
+status: review
 owner: MikolajEkiert (Claude)
 stage: infra
 ---
@@ -38,7 +38,16 @@ reported only.
 - [x] `summarise` / `compare` work with any reading names; readings that do not count are
       reported separately (tested)
 - [x] Metrica numbers of the hybrid unchanged (0.659 / 0.561)
-- [ ] first numbers on IDSSE logged: hybrid, `unsup_v2`, the package's own decoder; stoppages
+- [x] first numbers on IDSSE logged: hybrid, `unsup_v2`, the package's own decoder; stoppages
       with the ball in view
 
 ## Log
+- 2026-11-14 · MikolajEkiert/Claude · `supervised.to_match`, `idsse_conditions`, out-of-fold
+  predictions through the package's `evaluate_external.run`; `validation` suites and readings
+  taken from the cells; `possession validate --suite idsse` with the package's own decoder as a
+  reference row; stoppage context in every cell. docs/FUSION.md section 8 fixes the rule for
+  choosing between versions before any of them is measured here. First numbers (mean of the
+  two readings that count): hybrid 0.671, the package's own decoder 0.637, `unsup_v2` 0.416;
+  the hybrid wins on 7 of 7 matches against the package's decoder and calls 1% of the
+  stoppage frames with the ball in view play. Training the fourteen fold models took 13 minutes
+  once; they are cached. Next: PFF (task 10).
