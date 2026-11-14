@@ -39,7 +39,8 @@ from pathlib import Path
 import numpy as np
 
 import possession_metrics as pm
-from possession import features, sequence
+from possession import features as derived
+from possession import sequence, team_features
 from possession._paths import CACHE_DIR, REPO_ROOT
 from possession.match import Match
 
@@ -150,7 +151,7 @@ PFF_ONLY_STRIDE = 8  # every 8th frame of 48 matches: about as many rows as the 
 
 
 @cache
-def model(labels: str = "raw", data: str = "idsse", regime: str = "none"):
+def model(labels: str = "raw", data: str = "idsse", regime: str = "none", features: str = "v1"):
     """(booster, feature function) of the package's final configuration, trained on `labels`.
 
     `data` names the training matches: "idsse" (the seven open matches, the submitted model),
@@ -158,12 +159,17 @@ def model(labels: str = "raw", data: str = "idsse", regime: str = "none"):
     orientation, one noise draw, every 15th frame) or "pff" (the PFF training matches alone).
     The PFF test matches (`pff_games`) are never trained on. `regime` is the ball regime of the
     training matches (`possession.regime`): "none" is the package's own degradation, the others
-    lose the ball as automatic tracking does (IDSSE only).
+    lose the ball as automatic tracking does (IDSSE only). `features` is the feature set
+    (`FEATURE_SETS`): "v1" is the package's own; the others append the block of
+    `possession.team_features` to it (task 14) and are trained by `_train_final_team`.
 
     If models/ holds the model for exactly this configuration it is loaded. Otherwise the first
     call downloads the open data, degrades and featurises it and trains (minutes); later calls,
     in this process or another, load the cached model.
     """
+    if features != "v1":
+        _check_team(features, data, regime)
+        return _train_final_team(labels, features), _setup()[1]
     if data not in DATA:
         raise ValueError(f"unknown training data {data!r}; known: {DATA}")
     _, _, submission, _ = _package()
@@ -285,12 +291,18 @@ def _prepare_pff(ids, feature_fn, label_fn, params):
 
 
 def probabilities(
-    match: Match, labels: str = "raw", data: str = "idsse", regime: str = "none", tta: bool = False
+    match: Match,
+    labels: str = "raw",
+    data: str = "idsse",
+    regime: str = "none",
+    tta: bool = False,
+    features: str = "v1",
 ) -> np.ndarray:
     """(n, 3) float64: P(H), P(A), P(D) per frame from the supervised model, memoised on `match`.
 
     `regime` picks the model trained in that ball regime (`model`); `tta` averages the prediction
-    of the match with that of the same match with home and away exchanged (columns swapped back).
+    of the match with that of the same match with home and away exchanged (columns swapped back);
+    `features` picks the feature set (`FEATURE_SETS`; "v1" is the submitted model's).
 
     A match the model could have been trained on is never scored by a model that saw it. Such a
     match carries a function under `HELD_OUT` that returns the prediction of a model trained
@@ -302,16 +314,19 @@ def probabilities(
     def compute():
         held_out = match._cache.get(HELD_OUT)
         if held_out is not None:
-            return np.asarray(held_out(labels, data, regime=regime, tta=tta), dtype=float)
+            return np.asarray(
+                held_out(labels, data, regime=regime, tta=tta, features=features), dtype=float
+            )
         if match.game.startswith(TRAINING_PREFIXES):
             raise RuntimeError(
                 f"{match.game} is named like a training match of the supervised model and has no "
                 "held-out prediction attached; score it through supervised.idsse_conditions or "
                 "supervised.pff_conditions"
             )
-        return _predict(match, labels, data, regime, tta)
+        return _predict(match, labels, data, regime, tta, features)
 
-    return features._memo(match, ("supervised", labels, data, regime, tta), compute)
+    key = ("supervised", labels, data, regime, tta, features)
+    return derived._memo(match, key, compute)
 
 
 def features_of(match: Match) -> np.ndarray:
@@ -361,11 +376,18 @@ SWAP_COLUMNS = [1, 0, 2]  # P(H), P(A), P(D) of the swapped view back in the ori
 
 
 def _predict(
-    match: Match, labels: str, data: str, regime: str = "none", tta: bool = False
+    match: Match,
+    labels: str,
+    data: str,
+    regime: str = "none",
+    tta: bool = False,
+    features: str = "v1",
 ) -> np.ndarray:
     """Probabilities of the full model for `match`. The package caches the match's features on
     disk; with POSSESSION_NO_FEATURE_CACHE set they are computed and thrown away, which is the
     same numbers (the package rounds features to float16 on every path)."""
+    if features != "v1":
+        return _predict_team(match, labels, data, regime, tta, features)
     booster, feature_fn = model(labels, data, regime)
     _, _, submission, _ = _package()
     from solution import cache as package_cache
@@ -617,9 +639,21 @@ def idsse_conditions(seeds=(0, 1), readings=IDSSE_READINGS, input_regime: str = 
 
 
 def _from_fold(kind: str, name: str, seed: int, letters=None, input_regime: str = "plain"):
-    """(labels, data, regime, tta) -> the out-of-fold result of `kind` for the match `name`."""
+    """(labels, data, regime, tta, features) -> the out-of-fold result of `kind` for the match
+    `name`."""
 
-    def get(labels: str = "raw", data: str = "idsse", regime: str = "none", tta: bool = False):
+    def get(
+        labels: str = "raw",
+        data: str = "idsse",
+        regime: str = "none",
+        tta: bool = False,
+        features: str = "v1",
+    ):
+        if features != "v1":
+            if kind != "probs":
+                raise ValueError(f"no out-of-fold {kind!r} for the feature set {features!r}")
+            _check_team(features, data, regime, tta)
+            return _team_folds(labels, seed, features)[(name, input_regime)]
         if kind == "package" or (input_regime == "plain" and regime == "none" and not tta):
             value = _leave_one_out(labels, seed, data)[kind][name]
             return value if letters is None else letters[np.asarray(value)].astype("<U1")
@@ -717,9 +751,279 @@ def pff_conditions(readings=PFF_READINGS):
 
 
 def _never_trained_on(match: Match):
-    """(labels, data) -> probabilities for a PFF test match, which no model is trained on."""
+    """(labels, data, ...) -> probabilities for a PFF test match, which no model is trained on."""
 
-    def get(labels: str = "raw", data: str = "idsse", regime: str = "none", tta: bool = False):
-        return _predict(match, labels, data, regime, tta)
+    def get(
+        labels: str = "raw",
+        data: str = "idsse",
+        regime: str = "none",
+        tta: bool = False,
+        features: str = "v1",
+    ):
+        return _predict(match, labels, data, regime, tta, features)
 
     return get
+
+
+# -- an extra feature block (task 14): the package's features plus possession.team_features ----
+
+# Feature sets of the model. "v1" is the package's own, the submitted model, and nothing below is
+# on its path. The others append the block of `possession.team_features` to every row and differ
+# only in the number of boosting rounds (None: the package's ROUNDS). They are trained here
+# exactly as the package trains "v1" (the same matches, degradation, labels, noise seeds,
+# orientations, stride, sample weights and LightGBM parameters) and cached under TEAM_DIR, never
+# in the package's cache.
+FEATURE_SETS = {"v1": None, "v1+team": {"rounds": None}, "v1+team-r600": {"rounds": 600}}
+TEAM_DIR = CACHE_DIR / "team_features"  # blocks/, models/, folds/
+
+
+def _check_team(features: str, data: str = "idsse", regime: str = "none", tta: bool = False):
+    """Raise unless `features` names a feature set that exists for these options."""
+    if features not in FEATURE_SETS:
+        raise ValueError(f"unknown feature set {features!r}; known: {sorted(FEATURE_SETS)}")
+    if features != "v1" and (data != "idsse" or regime != "none" or tta):
+        raise ValueError(
+            f"the feature set {features!r} exists for data='idsse', regime='none' only"
+        )
+
+
+def _cache_on() -> bool:
+    return not os.environ.get("MTAH_NO_CACHE")  # the package's switch, honoured here too
+
+
+def _cached_npy(path: Path, compute, mmap: bool = True) -> np.ndarray:
+    """An array from `path`, or compute() it and store it there (atomically)."""
+    if not _cache_on():
+        return compute()
+    if not path.is_file():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        partial = path.with_name(f"{path.stem}.{os.getpid()}.tmp.npy")
+        np.save(partial, compute())
+        partial.replace(path)
+    return np.load(path, mmap_mode="r" if mmap else None)
+
+
+def _cached_booster(path: Path, fit):
+    """A LightGBM booster from `path`, or fit() it and store it there. It is always read back from
+    the file, so the first call and every later one predict with the same model text."""
+    import lightgbm as lgb
+
+    if not _cache_on():
+        return fit()
+    if not path.is_file():
+        booster = fit()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        partial = path.with_name(f"{path.stem}.{os.getpid()}.tmp.txt")
+        booster.save_model(str(partial))
+        partial.replace(path)
+    return lgb.Booster(model_file=str(path))
+
+
+def _content_key(m: dict) -> str:
+    """Hash of every array of container `m` that the block reads."""
+    h = hashlib.sha256()
+    for name in ("px", "py", "bx", "by", "team", "half", "pitch"):
+        a = np.ascontiguousarray(m[name])
+        h.update(f"{name}:{a.dtype.str}:{a.shape}".encode())
+        h.update(a.tobytes())
+    return h.hexdigest()[:24]
+
+
+def team_block(m: dict, view: str = "orig") -> np.ndarray:
+    """(T, K) float16: the block of `possession.team_features` for container `m`, or for `m` with
+    home and away exchanged (view "swap", the package's second orientation). Cached under
+    TEAM_DIR/blocks by the block's key and the container's content; POSSESSION_NO_FEATURE_CACHE
+    computes it without the cache (the same numbers: float16 on every path)."""
+    if view not in ("orig", "swap"):
+        raise ValueError(f"unknown view {view!r}")
+    source = team_features.swapped(m) if view == "swap" else m
+
+    def compute():
+        return team_features.build(source)[0]
+
+    if os.environ.get("POSSESSION_NO_FEATURE_CACHE"):
+        return compute()
+    key = hashlib.sha256(
+        f"{team_features.block_key()}:{_content_key(source)}:{view}".encode()
+    ).hexdigest()[:24]
+    return _cached_npy(TEAM_DIR / "blocks" / f"{key}.npy", compute)
+
+
+def _team_blocks(prepared: list) -> list[dict]:
+    """The block of each prepared match, in both orientations when the match has both."""
+    return [
+        {
+            "orig": team_block(d["m"]),
+            "swap": team_block(d["m"], "swap") if d.get("Xs") is not None else None,
+        }
+        for d in prepared
+    ]
+
+
+def _team_stack(prepared: list, blocks: list, skip=None) -> tuple[np.ndarray, np.ndarray]:
+    """`ev.stack(prepared, skip)` with each match's block appended to its rows: the same rows in
+    the same order (every TRAIN_STRIDE-th graded frame, the original orientation, then the
+    swapped one), float16 as the package's matrix."""
+    from solution import container as package_container
+    from solution import evaluate_external as ev
+
+    skip = set() if skip is None else ({skip} if isinstance(skip, int | np.integer) else set(skip))
+    xs, ys = [], []
+    for j, d in enumerate(prepared):
+        if j in skip:
+            continue
+        views = [(d["X"], blocks[j]["orig"], d["m"]["label"])]
+        if d.get("Xs") is not None:
+            views.append((d["Xs"], blocks[j]["swap"], d["ys"]))
+        for x, extra, y in views:
+            rows = np.flatnonzero(y != package_container.X)[:: ev.TRAIN_STRIDE]
+            xs.append(np.hstack([x[rows], extra[rows]]))
+            ys.append(y[rows])
+    return np.concatenate(xs), np.concatenate(ys)
+
+
+def _fit_team(prepared_lists: list, blocks_lists: list, cfg: dict, rounds: int, skip=None):
+    """`ev.fit` / `train_final` on the prepared matches with the block appended: rows of every
+    list (one per noise seed) except the matches in `skip`, the package's sample weights."""
+    from solution import evaluate_external as ev
+
+    xs, ys, ws = [], [], []
+    for prepared, blocks in zip(prepared_lists, blocks_lists, strict=True):
+        x, y = _team_stack(prepared, blocks, skip=skip)
+        xs.append(x)
+        ys.append(y)
+        ws.append(ev.stack_weights(prepared, skip, ev.TRAIN_STRIDE, cfg))
+    x, y = np.concatenate(xs), np.concatenate(ys)
+    del xs
+    weight = np.concatenate(ws) if cfg["weights"] else None
+    return ev.train(x, y, weight=weight, rounds=rounds)
+
+
+def _team_rounds(features: str) -> int:
+    from solution import evaluate_external as ev
+
+    return FEATURE_SETS[features]["rounds"] or ev.ROUNDS
+
+
+def _team_key(labels: str, features: str) -> list:
+    """Everything a model of the feature set `features` depends on, beside its matches."""
+    import inspect
+
+    params, feature_fn, train_cfg = _setup()
+    degrade, _, _, package_features = _package()
+    from solution import cache as package_cache
+    from solution import evaluate_external as ev
+    from solution import labels as package_labels
+
+    cfg = dict(ev.DEFAULT_CFG, **(train_cfg or {}))
+    code = "".join(inspect.getsource(fn) for fn in (_team_stack, _fit_team, _team_blocks))
+    return [
+        features,
+        team_features.block_key(),
+        hashlib.sha256(code.encode()).hexdigest()[:16],
+        package_features.feature_key(feature_fn),
+        package_labels.label_key(label_function(labels)),
+        sorted(dict(degrade.DEFAULTS, **params).items()),
+        package_cache.source(degrade),
+        ev.LGB_PARAMS,
+        _team_rounds(features),
+        ev.TRAIN_STRIDE,
+        sorted(cfg.items()),
+    ]
+
+
+@cache
+def _train_final_team(labels: str, features: str):
+    """The package's `train_final` with the block appended to every row: all seven IDSSE matches,
+    noise seeds `DEGRADE_SEEDS`, both orientations, every TRAIN_STRIDE-th graded frame, the
+    package's sample weights, LightGBM parameters and (unless the set says otherwise) rounds.
+    Cached under TEAM_DIR/models."""
+    params, feature_fn, train_cfg = _setup()
+    _, _, submission, _ = _package()
+    from solution import cache as package_cache
+    from solution import evaluate_external as ev
+    from solution import idsse
+
+    cfg = dict(ev.DEFAULT_CFG, **(train_cfg or {}))
+    seeds = tuple(submission.DEGRADE_SEEDS)
+    label_fn = label_function(labels)
+
+    def fit():
+        prepared = [
+            ev.prepare(
+                idsse.load_all(), feature_fn, label_fn, seed=s, degrade_params=params, log=_log
+            )
+            for s in seeds
+        ]
+        blocks = [_team_blocks(p) for p in prepared]
+        return _fit_team(prepared, blocks, cfg, _team_rounds(features))
+
+    key = package_cache.digest(
+        "team-final", *_team_key(labels, features), list(seeds), sorted(idsse.MATCHES)
+    )
+    return _cached_booster(TEAM_DIR / "models" / f"{key}.txt", fit)
+
+
+@cache
+def _team_folds(labels: str, seed: int, features: str) -> dict:
+    """{(match name, input regime): (T, 3)} for every IDSSE match of noise seed `seed`, predicted
+    by a model of the feature set `features` trained on the other six, as the package's harness
+    does it (`ev.run`: that seed's copies, both orientations, every TRAIN_STRIDE-th graded frame,
+    sample weights), in both validation input regimes (`INPUT_REGIMES`). The predictions are
+    cached under TEAM_DIR/folds; the fold models are not kept."""
+    params, feature_fn, train_cfg = _setup()
+    from solution import cache as package_cache
+    from solution import evaluate_external as ev
+    from solution import idsse
+
+    cfg = dict(ev.DEFAULT_CFG, **(train_cfg or {}))
+    label_fn = label_function(labels)
+    raws = idsse.load_all()
+    prepared = ev.prepare(raws, feature_fn, label_fn, seed=seed, degrade_params=params, log=_log)
+    blocks = _team_blocks(prepared)
+    inputs = {"plain": prepared}
+    inputs["auto"] = _idsse_inputs(raws, "auto", seed, feature_fn, label_fn, params, swap=False)
+    run_key = package_cache.digest(
+        "team-fold", *_team_key(labels, features), seed, [d["key"] for d in prepared]
+    )
+    out = {}
+    for k in range(len(prepared)):
+        paths = {
+            inp: TEAM_DIR
+            / "folds"
+            / f"{package_cache.digest(run_key, k, inputs[inp][k]['key'])}.npy"
+            for inp in INPUT_REGIMES
+        }
+        booster = None
+        if not (_cache_on() and all(path.is_file() for path in paths.values())):
+            booster = _fit_team([prepared], [blocks], cfg, _team_rounds(features), skip=k)
+            _log(f"team fold {k} of seed {seed} ({features}) trained")
+        for inp, path in paths.items():
+            entry = inputs[inp][k]
+
+            def predict(entry=entry, booster=booster):
+                x = np.hstack([entry["X"], team_block(entry["m"])])
+                return np.asarray(booster.predict(x), dtype=float)
+
+            out[(str(entry["m"]["name"]), inp)] = _cached_npy(path, predict, mmap=False)
+    return out
+
+
+def _predict_team(
+    match: Match, labels: str, data: str, regime: str, tta: bool, features: str
+) -> np.ndarray:
+    """Probabilities of the final model of the feature set `features` for `match`: the package's
+    features through its own cache (as `_predict` reads them), the block appended."""
+    _check_team(features, data, regime, tta)
+    booster, feature_fn = model(labels, data, regime, features)
+    _package()
+    from solution import cache as package_cache
+    from solution import features as package_features
+
+    m = container(match)
+    if os.environ.get("POSSESSION_NO_FEATURE_CACHE"):
+        x = feature_fn(m)[0].astype(package_cache.FEATURE_DTYPE)
+    else:
+        key = package_cache.digest("match", package_cache.fingerprint(m))
+        x, _ = package_features.cached(feature_fn, m, "orig", key)
+    return np.asarray(booster.predict(np.hstack([x, team_block(m)])), dtype=float)

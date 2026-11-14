@@ -62,24 +62,26 @@ def test_stage_methods_read_the_three_class_probabilities(monkeypatch):
     p[5] = [0.0, 0.0, 1.0]  # certainly dead: the model says nothing about the team
     seen = []
 
-    def probabilities(m, labels="raw", data="idsse", regime="none", tta=False):
-        seen.append((labels, data, regime, tta))
+    def probabilities(m, labels="raw", data="idsse", regime="none", tta=False, features="v1"):
+        seen.append((labels, data, regime, tta, features))
         return p
 
     monkeypatch.setattr(supervised, "probabilities", probabilities)
     alive = supervised_ball_state(match)
     home = supervised_team(match, labels="tau2", data="pff")
     supervised_ball_state(match, regime="auto_lf", tta=True)
+    supervised_team(match, features="v1+team")
 
     np.testing.assert_allclose(alive, 1.0 - p[:, 2])
     assert np.isnan(home[5]) and alive[5] == 0.0
     known = ~np.isnan(home)
     np.testing.assert_allclose(home[known], p[known, 0] / (p[known, 0] + p[known, 1]))
-    # every parameter reaches the model
+    # every parameter reaches the model; the feature set is the submitted one unless asked
     assert seen == [
-        ("raw", "idsse", "none", False),
-        ("tau2", "pff", "none", False),
-        ("raw", "idsse", "auto_lf", True),
+        ("raw", "idsse", "none", False, "v1"),
+        ("tau2", "pff", "none", False, "v1"),
+        ("raw", "idsse", "auto_lf", True, "v1"),
+        ("raw", "idsse", "none", False, "v1+team"),
     ]
 
 
@@ -142,7 +144,7 @@ def test_a_container_round_trips_through_a_match():
 def test_a_training_match_is_only_ever_scored_out_of_fold(monkeypatch):
     from possession import validation
 
-    def no_model(labels="raw", data="idsse", regime="none"):
+    def no_model(labels="raw", data="idsse", regime="none", features="v1"):
         raise AssertionError("the full model must not be used for a training match")
 
     monkeypatch.setattr(supervised, "model", no_model)
@@ -150,19 +152,21 @@ def test_a_training_match_is_only_ever_scored_out_of_fold(monkeypatch):
     held = supervised.to_match({**supervised.container(base), "name": "IDSSE-TEST_deg0"})
     asked = []
 
-    def out_of_fold(labels="raw", data="idsse", regime="none", tta=False):
-        asked.append((labels, data, regime, tta))
+    def out_of_fold(labels="raw", data="idsse", regime="none", tta=False, features="v1"):
+        asked.append((labels, data, regime, tta, features))
         return fake_probabilities(held)
 
     held._cache[supervised.HELD_OUT] = out_of_fold
     np.testing.assert_array_equal(supervised.probabilities(held), fake_probabilities(held))
     supervised.probabilities(held, "tau2", "idsse+pff")
     supervised.probabilities(held, regime="auto_ml", tta=True)
+    supervised.probabilities(held, features="v1+team")
     # one out-of-fold prediction per model variant, never the full model
     assert asked == [
-        ("raw", "idsse", "none", False),
-        ("tau2", "idsse+pff", "none", False),
-        ("raw", "idsse", "auto_ml", True),
+        ("raw", "idsse", "none", False, "v1"),
+        ("tau2", "idsse+pff", "none", False, "v1"),
+        ("raw", "idsse", "auto_ml", True, "v1"),
+        ("raw", "idsse", "none", False, "v1+team"),
     ]
 
     bare = supervised.to_match({**supervised.container(base), "name": "IDSSE-TEST_deg0"})

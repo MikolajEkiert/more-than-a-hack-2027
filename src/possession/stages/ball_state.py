@@ -126,7 +126,12 @@ def blend(match: Match, sources: list = ("stoppage_evidence",), weights: list = 
 
 @register("ball_state", "supervised")
 def supervised(
-    match: Match, labels: str = "raw", data: str = "idsse", regime: str = "none", tta: bool = False
+    match: Match,
+    labels: str = "raw",
+    data: str = "idsse",
+    regime: str = "none",
+    tta: bool = False,
+    features: str = "v1",
 ) -> np.ndarray:
     """P(play is live) = 1 - P(D) from the supervised model in solution/ (LightGBM, open data).
 
@@ -134,13 +139,15 @@ def supervised(
     supervised track's own choice), "tau<s>" or "controlled<s>" (possession/supervised.py).
     `data` names the training matches: "idsse" (the submitted model), "idsse+pff" or "pff".
     `regime` the ball regime of the training matches (possession/regime.py: "none", "auto_lf",
-    "auto_ml", "mix_lf"); `tta` averages in the prediction with home and away exchanged. The
-    first call downloads the open training data and trains the model; it is cached afterwards.
+    "auto_ml", "mix_lf"); `tta` averages in the prediction with home and away exchanged;
+    `features` the feature set ("v1", the submitted model's, or "v1+team": plus the block of
+    possession/team_features.py). The first call downloads the open training data and trains the
+    model; it is cached afterwards.
     """
     from possession import fusion
     from possession import supervised as model
 
-    probs = model.probabilities(match, labels, data, regime=regime, tta=tta)
+    probs = model.probabilities(match, labels, data, regime=regime, tta=tta, features=features)
     return fusion.class_evidence("ball_state", *probs.T)
 
 
