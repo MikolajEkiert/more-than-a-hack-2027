@@ -1,0 +1,19 @@
+# Task 14, decoder options (scripts/decoder_grid14.py): version 1, evidence on frames without a tracked ball counts once per 25 frames
+name = "b_gap25"
+
+[ball_state]
+method = "blend"
+sources = ["supervised", "kickoff_wait"]
+
+[team]
+method = "blend"
+sources = ["supervised"]
+
+[decode]
+method = "switch_cost"
+turnover_cost = 5.0
+stop_cost = 12.0
+restart_cost = 12.0
+snap_start_s = 3.0
+snap_end_s = 3.0
+missing_frames_per_observation = 25.0
