@@ -455,12 +455,16 @@ def _idsse_inputs(raws, input_regime: str, seed: int, feature_fn, label_fn, para
 @cache
 def _regime_folds(labels: str, seed: int, regime: str) -> dict:
     """{(match name, input regime, view): (T, 3)} for every IDSSE match, predicted by a model
-    trained on the other six in the ball regime `regime` (noise seed `seed`), in both validation
+    trained on the other six (noise seed `seed`) in the ball regime `regime`, in both validation
     input regimes and both views ("orig", and "swap" with home and away exchanged).
 
-    The package's harness (`ev.run`) keeps no fold models, so this loop trains them with the same
-    `ev.fit` on the same prepared data; with regime "none" its "plain"/"orig" predictions are the
-    ones `_leave_one_out` returns (tests/test_supervised.py checks it on the data).
+    Like the package's harness, a fold uses the copies of one noise seed. A single regime trains
+    on that seed's copies in that regime, every `TRAIN_STRIDE`-th frame: with regime "none" this is
+    exactly the package's harness (`ev.run` keeps no fold models, so they are retrained here with
+    the same `ev.fit` on the same prepared data, and checked bit for bit against `_leave_one_out`).
+    A mixed regime (`regime.MIXED`, half the final model's seeds in each regime) trains on that
+    seed's copies in each of its regimes, every 2 x `TRAIN_STRIDE`-th frame of each: the same
+    number of rows as a single-regime fold, in the final model's proportions.
     """
     from possession import regime as regime_mod
     from solution import cache as package_cache
@@ -471,32 +475,48 @@ def _regime_folds(labels: str, seed: int, regime: str) -> dict:
     label_fn = label_function(labels)
     cfg = dict(ev.DEFAULT_CFG, **(train_cfg or {}))
     raws = idsse.load_all()
-    train = ev.prepare(
-        regime_mod.regime_inputs(raws, regime, seed),
-        feature_fn,
-        label_fn,
-        seed=seed,
-        degrade_params=regime_mod.regime_params(params, regime, seed),
-        log=_log,
-    )
-    own = regime_mod.seed_regime(regime, seed)
+    parts = regime_mod.MIXED.get(regime, (regime,))
+    stride = ev.TRAIN_STRIDE * len(parts)
+    prepared = {}
+    for part in parts:
+        prepared[part] = ev.prepare(
+            regime_mod.regime_inputs(raws, part, seed),
+            feature_fn,
+            label_fn,
+            seed=seed,
+            degrade_params=regime_mod.regime_params(params, part, seed),
+            log=_log,
+        )
     inputs = {
-        name: train
-        if INPUT_REGIMES[name] == own
+        name: prepared[INPUT_REGIMES[name]]
+        if INPUT_REGIMES[name] in prepared
         else _idsse_inputs(raws, name, seed, feature_fn, label_fn, params)
         for name in INPUT_REGIMES
     }
     run_key = package_cache.digest(
         "fold-regime",
         regime_mod.regime_key(regime),
-        [d["key"] for d in train],
+        [[d["key"] for d in prepared[part]] for part in parts],
         ev.LGB_PARAMS,
         ev.ROUNDS,
-        ev.TRAIN_STRIDE,
+        stride,
         sorted(cfg.items()),
     )
+
+    def fit(k):
+        if len(parts) == 1:
+            return ev.fit(prepared[parts[0]], skip=k, cfg=cfg)
+        xs, ys, ws = [], [], []
+        for part in parts:
+            x, y = ev.stack(prepared[part], skip=k, stride=stride)
+            xs.append(x)
+            ys.append(y)
+            ws.append(ev.stack_weights(prepared[part], skip=k, stride=stride, cfg=cfg))
+        weight = np.concatenate(ws) if cfg["weights"] else None
+        return ev.train(np.concatenate(xs), np.concatenate(ys), weight=weight)
+
     out = {}
-    for k in range(len(train)):
+    for k in range(len(raws)):
         wanted = [(inp, view) for inp in INPUT_REGIMES for view in ("orig", "swap")]
         keys = {
             (inp, view): package_cache.digest(run_key, k, inputs[inp][k]["key"], view)
@@ -504,7 +524,7 @@ def _regime_folds(labels: str, seed: int, regime: str) -> dict:
         }
         booster = None
         if not all(package_cache.exists("folds", key) for key in keys.values()):
-            booster = ev.fit(train, skip=k, cfg=cfg)
+            booster = fit(k)
             _log(f"fold {k} of regime {regime} (seed {seed}) trained")
         for (inp, view), key in keys.items():
             entry = inputs[inp][k]
