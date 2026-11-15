@@ -771,3 +771,32 @@ Version 5 (`configs/c15_best.toml`, version 4 with turnover cost 6, sha256 `0167
 in both Linux containers) is the documented alternative. It is a bet on the `controlled` reading:
 +0.012 to +0.020 under it, -0.010 to +0.005 under `touch`, -0.004 to -0.007 on PFF. Against version 1
 it passes the team's rule A (plain IDSSE 6 of 7), which version 4 fails (3 of 7).
+
+## 14. A minimum stoppage length (task 16, 2026-11-15)
+
+Idea of other teams (Barca-Hackathon, SAM, ZesterJ): a decoder that refuses very short stoppages.
+Ours: `switch_cost(min_stop_s=..., min_stop_min_alive=...)` turns a stoppage shorter than `min_stop_s`
+lying between two spells of the same team, in one half, into that team; with `min_stop_min_alive`
+only where the mean p_alive over it is at least that value. Off by default. Family of 16 (rule in
+tasks/16-decoder-min-stoppage.md, written before measuring): 2 / 3 / 4 / 6 s x guard none / 0.2 x
+turnover cost 5 (version 4) / 6 (version 5). Unweighted difference to version 4, no guard:
+
+| set | 2 s | 3 s | 4 s | 6 s | version 5 | version 5 + 3 s |
+|---|---|---|---|---|---|---|
+| Metrica `label_free` | +0.000 | -0.000 | -0.000 | -0.007 | +0.001 | +0.001 |
+| Metrica `match_like` | +0.000 | +0.001 | +0.001 | -0.004 | +0.013 | +0.014 |
+| Metrica `match_regime` | +0.000 | +0.000 | -0.000 | -0.005 | +0.006 | +0.006 |
+| Metrica `match_regime_still` | +0.002 | +0.022 | +0.022 | +0.018 | +0.006 | +0.028 |
+| PFF | -0.000 | -0.000 | +0.000 | -0.002 | -0.004 | -0.005 |
+| IDSSE, plain | -0.000 | -0.001 | -0.002 | -0.005 | +0.006 | +0.005 |
+| IDSSE, automatic | -0.000 | -0.000 | -0.001 | -0.004 | +0.010 | +0.009 |
+
+The option undoes the still ball's false stoppages (2-4 s stoppages under `match_regime_still`: 2.01
+per 10 minutes by version 4, 0.89 with 3 s, truth 0.70) and does nothing useful elsewhere: in the
+truth 40-50% of 2-4 s stoppages also have one team on both sides, so merging them costs as much as it
+gains. On the match it removes 0.18 (3 s) or 0.66 (4 s) stoppages per 10 minutes, all of 2-4 s; the
+match's 4-8 s excess is out of its reach. Rule D (weights `truth:c14_best`) picks version 5 + 3 / 4 s
+(+0.0150 held out, threshold +0.0071) and fails the PFF floor (-0.0082 against -0.005), the same
+failure as version 5 in task 15. **Version 4 stays.** Under unit weights the rule would adopt
+version 5 + 4 s (PFF -0.0036); on version 4's decoder alone the gain is +0.0050, all of it from the
+still-ball stress profile, which overstates the match's still ball about fourfold (section 13).

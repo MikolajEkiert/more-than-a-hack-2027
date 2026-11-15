@@ -1,5 +1,5 @@
 ---
-status: doing
+status: review
 owner: MikolajEkiert (Claude)
 stage: decode
 ---
@@ -62,12 +62,39 @@ For a change to version 4:
    such. The public 5-minute window plays no part.
 
 ## Acceptance criteria
-- [ ] options in `switch_cost`, off by default; version 4 byte-identical (contract tests, a focused
+- [x] options in `switch_cost`, off by default; version 4 byte-identical (contract tests, a focused
       test, and a config equal to c14_best reproducing its cells through the fast path)
-- [ ] 16 members measured on the 7 sets
-- [ ] stoppage-length diagnostic before / after (`composition15.py lengths`)
-- [ ] rule applied; run logged for a chosen member if any
-- [ ] `make check` green; docs/DECISIONS.md line (credit to the other teams), FUSION.md section 14
+- [x] 16 members measured on the 7 sets
+- [x] stoppage-length diagnostic before / after (`composition15.py lengths`)
+- [x] rule applied; run logged for a chosen member if any
+- [x] `make check` green; docs/DECISIONS.md line (credit to the other teams), FUSION.md section 14
 
 ## Log
 - 2026-11-15 · Claude · task opened; decision rule and family written before measuring.
+- 2026-11-15 · Claude · `switch_cost(min_stop_s, min_stop_min_alive)` via `short_stoppages`
+  (vectorised, after the snaps); focused test plus the contract tests. `t16_v4copy` (a copy of
+  c14_best) run through `decoder_grid14.py`: its cells are byte-identical to c14_best's on all 7 sets.
+- 2026-11-15 · Claude · Family measured on the 7 sets. Unweighted difference to version 4, V4's
+  decoder (turnover 5), min stop 2 / 3 / 4 / 6 s: label_free +0.000 / -0.000 / -0.000 / -0.007;
+  match_like +0.000 / +0.001 / +0.001 / -0.004; match_regime +0.000 / +0.000 / -0.000 / -0.005;
+  match_regime_still +0.002 / **+0.022** / **+0.022** / +0.018 (3 of 3, interval [+0.018, +0.026] for
+  3 s); PFF -0.000 / -0.000 / +0.000 / -0.002; IDSSE -0.000 / -0.001 / -0.002 / -0.005; auto -0.000 /
+  -0.000 / -0.001 / -0.004. The p_alive guard (0.2) keeps about a quarter of the still-ball gain
+  (+0.006) and is otherwise neutral. On version 5's decoder the same pattern adds to the turnover-6
+  effect (vs version 5: still +0.022 for 3 s, every other set within +-0.002).
+- 2026-11-15 · Claude · Rule D (`--bins truth:c14_best`, K = 16, threshold +0.0071): held-out picks
+  t16_t6_m3 / t16_t6_m4 / t16_t6_m4, gain +0.0150 (5% bound +0.0121), lowest (profile, reading)
+  label_free/touch -0.0091; final member t16_t6_m3 fails the PFF floor (-0.0082 weighted against
+  -0.005); IDSSE +0.0065, auto +0.0121; footprint 4.74 / 0.478 inside. **Version 4 stays.**
+  Reported, not deciding: `--bins unit` picks t16_t6_m4 and passes (gain +0.0151, PFF -0.0036,
+  footprint 4.63 / 0.476). Informative only (not pre-registered): the eight members on version 4's
+  decoder alone give +0.0050 held out (threshold for K = 8 +0.0061): the whole gain is the still-ball
+  profile (controlled +0.024, touch +0.016), every other profile -0.001 to +0.001.
+- 2026-11-15 · Claude · Stoppage lengths (`composition15.py lengths`, per 10 graded minutes, 2-4 s
+  bin, share with the same team on both sides in brackets): the match, version 4 0.94 (0.70), 3 s
+  0.76, 4 s 0.28; match_regime_still 2.01 (0.66) -> 0.89 / 0.69 (truth 0.70, 0.40); match_regime 0.57
+  -> 0.47 / 0.30 (truth 0.70); PFF 0.28 -> 0.21 / 0.10 (truth 0.44). The option removes what the
+  still ball adds but also true short stoppages (in the truth 40-50% of 2-4 s stoppages have one team
+  on both sides), so without the still ball it is neutral. The 4-8 s excess on the match (0.58 same
+  team) is beyond its reach at 3-4 s and 6 s already loses everywhere but the still-ball profile.
+  Verdict: no change; `min_stop_s` stays available, off. No run logged (no member chosen).
