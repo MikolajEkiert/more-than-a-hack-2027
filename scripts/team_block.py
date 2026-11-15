@@ -2,6 +2,7 @@
 
     uv run python scripts/team_block.py check                  # rows = the package's rows + block
     uv run python scripts/team_block.py train [--features v1+team] [--folds-only|--final-only]
+        [--labels raw] [--tta]           # task 18: debounced training labels, swap-averaged folds
     uv run python scripts/team_block.py gain [--features v1+team] [--top 20]
 
 `check` builds one fold's training matrix from the real prepared IDSSE matches and verifies that
@@ -55,15 +56,15 @@ def check(seed: int = 0, held_out: int = 0) -> None:
     print(f"check passed: {x.shape[0]} rows, {width} package columns + {x.shape[1] - width} block")
 
 
-def train(features: str, folds: bool, final: bool) -> None:
+def train(features: str, folds: bool, final: bool, labels: str = "raw", tta: bool = False) -> None:
     t0 = time.time()
     if final:
-        supervised.model("raw", "idsse", "none", features)
-        print(f"final model of {features}: {time.time() - t0:.0f} s", flush=True)
+        supervised.model(labels, "idsse", "none", features)
+        print(f"final model of {features} ({labels}): {time.time() - t0:.0f} s", flush=True)
     if folds:
         for seed in (0, 1):
             t1 = time.time()
-            out = supervised._team_folds("raw", seed, features)
+            out = supervised._team_folds(labels, seed, features, tta)
             print(f"folds of seed {seed}: {len(out)} predictions, {time.time() - t1:.0f} s")
     print(f"total {time.time() - t0:.0f} s")
 
@@ -92,11 +93,19 @@ def main():
     parser.add_argument("--folds-only", action="store_true")
     parser.add_argument("--final-only", action="store_true")
     parser.add_argument("--top", type=int, default=20)
+    parser.add_argument("--labels", default="raw", help="supervised.label_function spec")
+    parser.add_argument("--tta", action="store_true", help="folds: home/away swap-averaged")
     args = parser.parse_args()
     if args.action == "check":
         check()
     elif args.action == "train":
-        train(args.features, folds=not args.final_only, final=not args.folds_only)
+        train(
+            args.features,
+            folds=not args.final_only,
+            final=not args.folds_only,
+            labels=args.labels,
+            tta=args.tta,
+        )
     else:
         gain(args.features, args.top)
 

@@ -653,7 +653,7 @@ def _from_fold(kind: str, name: str, seed: int, letters=None, input_regime: str 
             if kind != "probs":
                 raise ValueError(f"no out-of-fold {kind!r} for the feature set {features!r}")
             _check_team(features, data, regime, tta)
-            return _team_folds(labels, seed, features, data)[(name, input_regime)]
+            return _team_folds(labels, seed, features, data, tta)[(name, input_regime)]
         if kind == "package" or (input_regime == "plain" and regime == "none" and not tta):
             value = _leave_one_out(labels, seed, data)[kind][name]
             return value if letters is None else letters[np.asarray(value)].astype("<U1")
@@ -773,7 +773,17 @@ def _never_trained_on(match: Match):
 # exactly as the package trains "v1" (the same matches, degradation, labels, noise seeds,
 # orientations, stride, sample weights and LightGBM parameters) and cached under TEAM_DIR, never
 # in the package's cache.
-FEATURE_SETS = {"v1": None, "v1+team": {"rounds": None}, "v1+team-r600": {"rounds": 600}}
+# Task 18 adds training recipes under their own names (new cache keys; "v1+team" is untouched):
+# "turn_weight" multiplies the package's sample weight of every training row within "turn_s"
+# seconds of a team change (H to A or A to H) of the training labels (`turn_multiplier`).
+FEATURE_SETS = {
+    "v1": None,
+    "v1+team": {"rounds": None},
+    "v1+team-r600": {"rounds": 600},
+    "v1+team-tw2": {"rounds": None, "turn_weight": 2.0, "turn_s": 1.0},
+    "v1+team-tw4": {"rounds": None, "turn_weight": 4.0, "turn_s": 1.0},
+}
+TRAINING_OPTIONS = ("turn_weight", "turn_s")  # recipe options beside "rounds"
 TEAM_DIR = CACHE_DIR / "team_features"  # blocks/, models/, folds/
 TEAM_MODELS_DIR = MODELS_DIR / "team"  # committed final models of the feature sets: <key>.txt.gz
 
@@ -805,7 +815,7 @@ def _check_team(features: str, data: str = "idsse", regime: str = "none", tta: b
     """Raise unless `features` names a feature set that exists for these options."""
     if features not in FEATURE_SETS:
         raise ValueError(f"unknown feature set {features!r}; known: {sorted(FEATURE_SETS)}")
-    if features != "v1" and (data not in TEAM_DATA or regime != "none" or tta):
+    if features != "v1" and (data not in TEAM_DATA or regime != "none"):
         raise ValueError(
             f"the feature set {features!r} exists for data in {sorted(TEAM_DATA)}, "
             "regime='none' only"
@@ -934,6 +944,67 @@ def _team_rounds(features: str) -> int:
     return FEATURE_SETS[features]["rounds"] or ev.ROUNDS
 
 
+def turn_multiplier(label: np.ndarray, frames: int, factor: float) -> np.ndarray:
+    """(T,) float64: `factor` on every frame within `frames` of a team change of `label`, 1
+    elsewhere.
+
+    A team change is a frame whose label is H or A while the previous frame's is the other team
+    (package codes; D and X frames never start one). Every frame from `frames` before to `frames`
+    after the change's first frame is covered, clipped to the array. Task 18, after the
+    boundary-weighted losses of other teams (Team Sigue, SAM, Mantas).
+    """
+    from solution import container as package_container
+
+    label = np.asarray(label)
+    out = np.ones(len(label), dtype=np.float64)
+    if len(label) < 2 or factor == 1.0:
+        return out
+    team = (label == package_container.H) | (label == package_container.A)
+    change = np.flatnonzero(team[1:] & team[:-1] & (label[1:] != label[:-1])) + 1
+    if len(change) == 0:
+        return out
+    cover = np.zeros(len(label) + 1, dtype=np.int64)  # difference array of the covered spans
+    np.add.at(cover, np.clip(change - frames, 0, len(label)), 1)
+    np.add.at(cover, np.clip(change + frames + 1, 0, len(label)), -1)
+    out[np.cumsum(cover[:-1]) > 0] = factor
+    return out
+
+
+def _team_turn_rows(prepared: list, skip, frames: int, factor: float) -> np.ndarray:
+    """`turn_multiplier` on the rows of `_team_stack(prepared, skip=skip)`, in the same order."""
+    from solution import container as package_container
+    from solution import evaluate_external as ev
+
+    skip = set() if skip is None else ({skip} if isinstance(skip, int | np.integer) else set(skip))
+    out = []
+    for j, d in enumerate(prepared):
+        if j in skip:
+            continue
+        views = [d["m"]["label"]] + ([d["ys"]] if d.get("Xs") is not None else [])
+        for y in views:
+            rows = np.flatnonzero(y != package_container.X)[:: ev.TRAIN_STRIDE]
+            out.append(turn_multiplier(y, frames, factor)[rows])
+    return np.concatenate(out) if out else np.ones(0)
+
+
+def _training_options(features: str) -> dict:
+    """The task-18 recipe options of the feature set `features` ({} for the earlier sets)."""
+    spec = FEATURE_SETS[features] or {}
+    return {k: spec[k] for k in TRAINING_OPTIONS if k in spec}
+
+
+def _team_rows_of(prepared: list, cfg: dict, features: str, skip=None) -> tuple:
+    """`_team_rows`, with the sample weights multiplied by the set's turn weight if it has one."""
+    x, y, w = _team_rows(prepared, cfg, skip=skip)
+    options = _training_options(features)
+    if options.get("turn_weight", 1.0) != 1.0:
+        if not cfg["weights"]:
+            raise ValueError(f"{features!r} multiplies sample weights; the package uses none")
+        frames = int(round(options["turn_s"] * FPS))
+        w = w * _team_turn_rows(prepared, skip, frames, float(options["turn_weight"]))
+    return x, y, w
+
+
 def _team_key(labels: str, features: str) -> list:
     """Everything a model of the feature set `features` depends on, beside its matches."""
     import inspect
@@ -948,7 +1019,7 @@ def _team_key(labels: str, features: str) -> list:
     code = "".join(
         inspect.getsource(fn) for fn in (_team_stack, _team_blocks, _team_rows, _fit_team)
     )
-    return [
+    key = [
         features,
         team_features.block_key(),
         hashlib.sha256(code.encode()).hexdigest()[:16],
@@ -961,6 +1032,13 @@ def _team_key(labels: str, features: str) -> list:
         ev.TRAIN_STRIDE,
         sorted(cfg.items()),
     ]
+    options = _training_options(features)
+    if options:  # task 18's recipes only: the earlier sets keep their keys and committed models
+        turn_code = "".join(
+            inspect.getsource(fn) for fn in (turn_multiplier, _team_turn_rows, _team_rows_of)
+        )
+        key += [sorted(options.items()), hashlib.sha256(turn_code.encode()).hexdigest()[:16]]
+    return key
 
 
 @cache
@@ -986,7 +1064,7 @@ def _train_final_team(labels: str, features: str, data: str = "idsse"):
             prepared = ev.prepare(
                 idsse.load_all(), feature_fn, label_fn, seed=seed, degrade_params=params, log=_log
             )
-            parts.append(_team_rows(prepared, cfg))
+            parts.append(_team_rows_of(prepared, cfg, features))
             del prepared
         if TEAM_DATA[data]:
             parts.append(_extra_rows(data, labels, cfg))
@@ -1003,14 +1081,25 @@ def _train_final_team(labels: str, features: str, data: str = "idsse"):
 
 
 @cache
-def _team_folds(labels: str, seed: int, features: str, data: str = "idsse") -> dict:
+def _team_folds(
+    labels: str, seed: int, features: str, data: str = "idsse", tta: bool = False
+) -> dict:
     """{(match name, input regime): (T, 3)} for every IDSSE match of noise seed `seed`, predicted
     by a model of the feature set `features` trained on the other six, as the package's harness
     does it (`ev.run`: that seed's copies, both orientations, every TRAIN_STRIDE-th graded frame,
-    sample weights), in both validation input regimes (`INPUT_REGIMES`). With `data` other than
-    "idsse" every fold also trains on all the extra matches (`_extra_rows`), as the package's
-    `oof_with_extra` does; the held-out IDSSE match is never in. The predictions are cached under
-    TEAM_DIR/folds; the fold models are not kept."""
+    sample weights), in both validation input regimes (`INPUT_REGIMES`). The predictions are
+    cached under TEAM_DIR/folds; the fold models are not kept.
+
+    `data` (task 17): with `data` other than "idsse" every fold also trains on all the extra
+    matches (`_extra_rows`), as the package's `oof_with_extra` does; the held-out IDSSE match is
+    never in.
+
+    `tta` (task 18): the mean of the fold model's prediction of the match and of the match with
+    home and away exchanged (columns swapped back). The original view is the plain prediction's
+    file; the swapped view has its own. A fold model is refitted only if a file is missing, so
+    when the plain predictions already exist (version 4's), the swapped view comes from a refit
+    that matches them up to LightGBM's thread count (the models are byte-identical only at the
+    same thread count). Asking for `tta` first writes both views from one fit."""
     params, feature_fn, train_cfg = _setup()
     from solution import cache as package_cache
     from solution import evaluate_external as ev
@@ -1021,35 +1110,44 @@ def _team_folds(labels: str, seed: int, features: str, data: str = "idsse") -> d
     raws = idsse.load_all()
     prepared = ev.prepare(raws, feature_fn, label_fn, seed=seed, degrade_params=params, log=_log)
     inputs = {"plain": prepared}
-    inputs["auto"] = _idsse_inputs(raws, "auto", seed, feature_fn, label_fn, params, swap=False)
+    inputs["auto"] = _idsse_inputs(raws, "auto", seed, feature_fn, label_fn, params, swap=tta)
     run_key = package_cache.digest(
         "team-fold", *_team_key(labels, features), seed, [d["key"] for d in prepared]
     )
     if TEAM_DATA[data]:  # version 4's folds (data "idsse") keep their key
         run_key = package_cache.digest(run_key, *_extra_key(data))
+    views = ("orig", "swap") if tta else ("orig",)
     out = {}
     for k in range(len(prepared)):
-        paths = {
-            inp: TEAM_DIR
-            / "folds"
-            / f"{package_cache.digest(run_key, k, inputs[inp][k]['key'])}.npy"
-            for inp in INPUT_REGIMES
-        }
+        paths = {}
+        for inp in INPUT_REGIMES:
+            entry_key = inputs[inp][k]["key"]
+            for view in views:
+                parts = (run_key, k, entry_key) + (("swap",) if view == "swap" else ())
+                paths[(inp, view)] = TEAM_DIR / "folds" / f"{package_cache.digest(*parts)}.npy"
         booster = None
         if not (_cache_on() and all(path.is_file() for path in paths.values())):
-            parts = [_team_rows(prepared, cfg, skip=k)]
+            rows = [_team_rows_of(prepared, cfg, features, skip=k)]
             if TEAM_DATA[data]:
-                parts.append(_extra_rows(data, labels, cfg))
-            booster = _fit_team(parts, cfg, _team_rounds(features))
-            _log(f"team fold {k} of seed {seed} ({features}, {data}) trained")
-        for inp, path in paths.items():
+                rows.append(_extra_rows(data, labels, cfg))
+            booster = _fit_team(rows, cfg, _team_rounds(features))
+            _log(
+                f"team fold {k} of seed {seed} ({features}, {data}{', tta' if tta else ''}) trained"
+            )
+        for inp in INPUT_REGIMES:
             entry = inputs[inp][k]
+            probs = []
+            for view in views:
 
-            def predict(entry=entry, booster=booster):
-                x = np.hstack([entry["X"], team_block(entry["m"])])
-                return np.asarray(booster.predict(x), dtype=float)
+                def predict(entry=entry, booster=booster, view=view):
+                    x = entry["X"] if view == "orig" else entry["Xs"]
+                    x = np.hstack([x, team_block(entry["m"], view)])
+                    return np.asarray(booster.predict(x), dtype=float)
 
-            out[(str(entry["m"]["name"]), inp)] = _cached_npy(path, predict, mmap=False)
+                p = _cached_npy(paths[(inp, view)], predict, mmap=False)
+                probs.append(p if view == "orig" else np.asarray(p)[:, SWAP_COLUMNS])
+            value = probs[0] if len(probs) == 1 else np.mean(probs, axis=0)
+            out[(str(entry["m"]["name"]), inp)] = value
     return out
 
 
@@ -1057,20 +1155,28 @@ def _predict_team(
     match: Match, labels: str, data: str, regime: str, tta: bool, features: str
 ) -> np.ndarray:
     """Probabilities of the final model of the feature set `features` for `match`: the package's
-    features through its own cache (as `_predict` reads them), the block appended."""
+    features through its own cache (as `_predict` reads them), the block appended. With `tta`
+    (task 18), the mean with the prediction of the match with home and away exchanged (columns
+    swapped back), as `_predict` does for the package's model."""
     _check_team(features, data, regime, tta)
     booster, feature_fn = model(labels, data, regime, features)
     _package()
     from solution import cache as package_cache
+    from solution import container as package_container
     from solution import features as package_features
 
     m = container(match)
-    if os.environ.get("POSSESSION_NO_FEATURE_CACHE"):
-        x = feature_fn(m)[0].astype(package_cache.FEATURE_DTYPE)
-    else:
-        key = package_cache.digest("match", package_cache.fingerprint(m))
-        x, _ = package_features.cached(feature_fn, m, "orig", key)
-    return np.asarray(booster.predict(np.hstack([x, team_block(m)])), dtype=float)
+    out = []
+    for tag in ("orig", "swap") if tta else ("orig",):
+        view = m if tag == "orig" else package_container.swap_teams(m)
+        if os.environ.get("POSSESSION_NO_FEATURE_CACHE"):
+            x = feature_fn(view)[0].astype(package_cache.FEATURE_DTYPE)
+        else:
+            key = package_cache.digest("match", package_cache.fingerprint(m))
+            x, _ = package_features.cached(feature_fn, view, tag, key)
+        p = np.asarray(booster.predict(np.hstack([x, team_block(m, tag)])), dtype=float)
+        out.append(p if tag == "orig" else p[:, SWAP_COLUMNS])
+    return out[0] if len(out) == 1 else np.mean(out, axis=0)
 
 
 # -- extra training matches of other providers for the team-feature models (task 17) -----------
