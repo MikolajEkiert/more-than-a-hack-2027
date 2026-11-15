@@ -771,3 +771,27 @@ Version 5 (`configs/c15_best.toml`, version 4 with turnover cost 6, sha256 `0167
 in both Linux containers) is the documented alternative. It is a bet on the `controlled` reading:
 +0.012 to +0.020 under it, -0.010 to +0.005 under `touch`, -0.004 to -0.007 on PFF. Against version 1
 it passes the team's rule A (plain IDSSE 6 of 7), which version 4 fails (3 of 7).
+
+## 14. Training the team model for spellF1 (task 18, 2026-11-15)
+
+Eight members on version 4's ball state and decoder, the team model "v1+team" retrained: weight x2
+or x4 on training rows within 1 s of a hand-over (after Team Sigue's boundary-weighted loss, SAM's
+short-spell weights, Mantas' hand-over weights; the package's own weights stay underneath), training
+labels debounced 1.5 or 2.5 s (the package's `controlled<s>`, a relabelling many teams use), and the
+home/away-swapped view averaged at inference (CoreOrigin, Sigue, O(1)Burger, SAM), alone and combined
+(tasks/18-team-training-spell.md has the table). Difference to version 4, unweighted:
+
+| member | Metrica, 4 profiles | `controlled` / `touch` | PFF | IDSSE plain / auto |
+|---|---|---|---|---|
+| weight x2 | -0.006 to -0.016 | -0.013 to -0.025 / -0.011 to +0.004 | -0.004 | -0.009 / -0.007 |
+| weight x4 | -0.023 to -0.035 | -0.039 to -0.046 / -0.024 to -0.001 | -0.020 | -0.016 / -0.011 |
+| debounce 1.5 s | +0.001 to +0.033 | +0.012 to +0.050 / -0.010 to +0.016 | -0.027 (2 of 16) | +0.017 / +0.017 |
+| debounce 2.5 s | -0.012 to +0.033 | +0.030 to +0.076 / -0.053 to -0.011 | -0.078 (0 of 16) | +0.017 / +0.020 |
+| test-time swap | -0.002 to +0.002 | within 0.003 | +0.001 (12 of 16) | -0.002 / +0.002 |
+
+Rule D (K = 8, threshold +0.0061): the held-out picks are the debounced members (gain +0.016, bound
++0.007), but every `touch` cell but one is below the -0.010 floor and PFF loses 0.087; with unit
+weights the same; against version 5 the bound is below 0 as well. **Version 4 stays.** Debouncing
+the training labels is the `controlled` bet of version 5 and of the dropped `tau2` labels, only
+larger; hand-over weights make the model switch team more readily; swap-averaging is neutral, as it
+was on version 1 (M4).

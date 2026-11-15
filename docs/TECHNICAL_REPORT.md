@@ -101,7 +101,7 @@ calibrated enough); the temporal network's team head (its 5 Hz output blurs the 
 weighting the two ball-state models by whether the ball is tracked; moving restarts onto the
 ball's re-entry; relabelling short possessions sandwiched by the other team (gains under one
 reading of "possession", loses under the other, and on every PFF match); down-weighting evidence
-inside ball gaps; shifting possession changes in time.
+inside ball gaps; shifting possession changes in time; training the team model on labels debounced 1.5 or 2.5 s, or with extra weight on the frames around a hand-over (task 18: the debounce gains under `controlled` and loses under `touch` and on PFF, the weights lose everywhere); averaging the team model over the home/away-swapped view (neutral).
 
 ## 3. Training and validation data
 No label of the provided match was used for training or for choosing anything, and we labelled
