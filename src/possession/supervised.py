@@ -169,7 +169,7 @@ def model(labels: str = "raw", data: str = "idsse", regime: str = "none", featur
     """
     if features != "v1":
         _check_team(features, data, regime)
-        return _train_final_team(labels, features), _setup()[1]
+        return _train_final_team(labels, features, data), _setup()[1]
     if data not in DATA:
         raise ValueError(f"unknown training data {data!r}; known: {DATA}")
     _, _, submission, _ = _package()
@@ -653,7 +653,7 @@ def _from_fold(kind: str, name: str, seed: int, letters=None, input_regime: str 
             if kind != "probs":
                 raise ValueError(f"no out-of-fold {kind!r} for the feature set {features!r}")
             _check_team(features, data, regime, tta)
-            return _team_folds(labels, seed, features)[(name, input_regime)]
+            return _team_folds(labels, seed, features, data)[(name, input_regime)]
         if kind == "package" or (input_regime == "plain" and regime == "none" and not tta):
             value = _leave_one_out(labels, seed, data)[kind][name]
             return value if letters is None else letters[np.asarray(value)].astype("<U1")
@@ -788,13 +788,27 @@ def seed_team_models(models_dir: Path = TEAM_MODELS_DIR, cache_dir: Path | None 
     return seed_model_cache(models_dir, cache_dir or TEAM_DIR)
 
 
+# Training data of the team-feature models (task 17): the seven IDSSE matches (version 4's model,
+# whose cache key is unchanged) and, appended to them, the extra matches of the providers named
+# after the "+". The extra matches enter as the package adds PFF to its own model (`train_final`
+# with `extra`): one noise draw, one orientation, every `EXTRA_STRIDE`-th graded frame.
+TEAM_DATA = {
+    "idsse": (),
+    "idsse+pff": ("pff",),  # the 48 PFF training matches (`pff_games`), never the 16 test ones
+    "idsse+sc": ("sc",),  # the 20 SkillCorner open matches (`possession.skillcorner`)
+    "idsse+pff+sc": ("pff", "sc"),
+}
+EXTRA_STRIDE = 15  # the package's PFF_STRIDE
+
+
 def _check_team(features: str, data: str = "idsse", regime: str = "none", tta: bool = False):
     """Raise unless `features` names a feature set that exists for these options."""
     if features not in FEATURE_SETS:
         raise ValueError(f"unknown feature set {features!r}; known: {sorted(FEATURE_SETS)}")
-    if features != "v1" and (data != "idsse" or regime != "none" or tta):
+    if features != "v1" and (data not in TEAM_DATA or regime != "none" or tta):
         raise ValueError(
-            f"the feature set {features!r} exists for data='idsse', regime='none' only"
+            f"the feature set {features!r} exists for data in {sorted(TEAM_DATA)}, "
+            "regime='none' only"
         )
 
 
@@ -950,11 +964,12 @@ def _team_key(labels: str, features: str) -> list:
 
 
 @cache
-def _train_final_team(labels: str, features: str):
+def _train_final_team(labels: str, features: str, data: str = "idsse"):
     """The package's `train_final` with the block appended to every row: all seven IDSSE matches,
     noise seeds `DEGRADE_SEEDS`, both orientations, every TRAIN_STRIDE-th graded frame, the
     package's sample weights, LightGBM parameters and (unless the set says otherwise) rounds.
-    Cached under TEAM_DIR/models."""
+    With `data` other than "idsse" the rows of the extra matches of `TEAM_DATA[data]` are
+    appended (`_extra_rows`). Cached under TEAM_DIR/models."""
     params, feature_fn, train_cfg = _setup()
     _, _, submission, _ = _package()
     from solution import cache as package_cache
@@ -973,23 +988,29 @@ def _train_final_team(labels: str, features: str):
             )
             parts.append(_team_rows(prepared, cfg))
             del prepared
+        if TEAM_DATA[data]:
+            parts.append(_extra_rows(data, labels, cfg))
         return _fit_team(parts, cfg, _team_rounds(features))
 
     key = package_cache.digest(
         "team-final", *_team_key(labels, features), list(seeds), sorted(idsse.MATCHES)
     )
+    if TEAM_DATA[data]:  # version 4's key (data "idsse") stays as it was
+        key = package_cache.digest(key, *_extra_key(data))
     if _cache_on():
         seed_team_models()
     return _cached_booster(TEAM_DIR / "models" / f"{key}.txt", fit)
 
 
 @cache
-def _team_folds(labels: str, seed: int, features: str) -> dict:
+def _team_folds(labels: str, seed: int, features: str, data: str = "idsse") -> dict:
     """{(match name, input regime): (T, 3)} for every IDSSE match of noise seed `seed`, predicted
     by a model of the feature set `features` trained on the other six, as the package's harness
     does it (`ev.run`: that seed's copies, both orientations, every TRAIN_STRIDE-th graded frame,
-    sample weights), in both validation input regimes (`INPUT_REGIMES`). The predictions are
-    cached under TEAM_DIR/folds; the fold models are not kept."""
+    sample weights), in both validation input regimes (`INPUT_REGIMES`). With `data` other than
+    "idsse" every fold also trains on all the extra matches (`_extra_rows`), as the package's
+    `oof_with_extra` does; the held-out IDSSE match is never in. The predictions are cached under
+    TEAM_DIR/folds; the fold models are not kept."""
     params, feature_fn, train_cfg = _setup()
     from solution import cache as package_cache
     from solution import evaluate_external as ev
@@ -1004,6 +1025,8 @@ def _team_folds(labels: str, seed: int, features: str) -> dict:
     run_key = package_cache.digest(
         "team-fold", *_team_key(labels, features), seed, [d["key"] for d in prepared]
     )
+    if TEAM_DATA[data]:  # version 4's folds (data "idsse") keep their key
+        run_key = package_cache.digest(run_key, *_extra_key(data))
     out = {}
     for k in range(len(prepared)):
         paths = {
@@ -1015,8 +1038,10 @@ def _team_folds(labels: str, seed: int, features: str) -> dict:
         booster = None
         if not (_cache_on() and all(path.is_file() for path in paths.values())):
             parts = [_team_rows(prepared, cfg, skip=k)]
+            if TEAM_DATA[data]:
+                parts.append(_extra_rows(data, labels, cfg))
             booster = _fit_team(parts, cfg, _team_rounds(features))
-            _log(f"team fold {k} of seed {seed} ({features}) trained")
+            _log(f"team fold {k} of seed {seed} ({features}, {data}) trained")
         for inp, path in paths.items():
             entry = inputs[inp][k]
 
@@ -1046,3 +1071,95 @@ def _predict_team(
         key = package_cache.digest("match", package_cache.fingerprint(m))
         x, _ = package_features.cached(feature_fn, m, "orig", key)
     return np.asarray(booster.predict(np.hstack([x, team_block(m)])), dtype=float)
+
+
+# -- extra training matches of other providers for the team-feature models (task 17) -----------
+
+
+def _extra_sources(data: str) -> list[tuple[str, list]]:
+    """[(provider, [(match id, zero-argument loader of its container), ...])] of `data`'s extra
+    matches, in a fixed order. PFF: the 48 training matches of `pff_games`, never its 16 test
+    matches."""
+    out = []
+    for provider in TEAM_DATA[data]:
+        if provider == "pff":
+            ids = pff_games()[0]
+            out.append((provider, list(zip(ids, _pff_loaders(ids), strict=True))))
+        elif provider == "sc":
+            from possession import skillcorner
+
+            ids = skillcorner.match_ids()
+            out.append((provider, list(zip(ids, skillcorner.loaders(), strict=True))))
+        else:
+            raise ValueError(f"unknown extra provider {provider!r}")
+    return out
+
+
+@cache
+def _extra_key(data: str) -> tuple:
+    """What the extra rows of `data` depend on beyond `_team_key`: the providers, the content of
+    every extra match (positions, teams, halves, pitch and labels; not the container file's bytes,
+    which carry a time stamp), the stride and this code."""
+    import inspect
+
+    contents = []
+    for provider, matches in _extra_sources(data):
+        for game, load in matches:
+            m = load()
+            label = hashlib.sha256(np.ascontiguousarray(m["label"]).tobytes()).hexdigest()[:24]
+            contents.append((provider, game, _content_key(m), label))
+    code = "".join(inspect.getsource(fn) for fn in (_extra_match_rows, _extra_rows_cached))
+    return ("extra", data, contents, EXTRA_STRIDE, hashlib.sha256(code.encode()).hexdigest()[:16])
+
+
+def _extra_match_rows(raw: dict, index: int, label_fn, cfg: dict) -> tuple:
+    """(x, y, w) of one extra match, the block appended: what the package's `prepare` (noise seed
+    DEGRADE_SEEDS[0], the match at position `index`, one orientation, the ball loss topped up for
+    what the provider already lacks) and `stack` / `stack_weights` with stride EXTRA_STRIDE make
+    of it, as `train_final` does for its `extra`. One match at a time: 48 containers do not fit in
+    memory together."""
+    params, feature_fn, _ = _setup()
+    degrade, _, submission, package_features = _package()
+    from solution import cache as package_cache
+    from solution import container as package_container
+    from solution import evaluate_external as ev
+    from solution import labels as package_labels
+
+    dseed = submission.DEGRADE_SEEDS[0] * 100 + index  # how `ev.prepare` numbers its matches
+    params_i = ev._top_up(raw, params)
+    mkey = degrade.degrade_key(raw, dseed, params_i)
+    m = package_cache.container(
+        "degraded", mkey, lambda: degrade.degrade(raw, seed=dseed, **(params_i or {}))
+    )
+    lab = package_cache.array(
+        "labels",
+        package_cache.digest(package_labels.label_key(label_fn), package_cache.fingerprint(raw)),
+        lambda: label_fn(raw),
+        mmap=False,
+    )
+    m = dict(m, label=np.asarray(lab, np.int8))
+    x, _ = package_features.cached(feature_fn, m, "orig", mkey)
+    rows = np.flatnonzero(m["label"] != package_container.X)[::EXTRA_STRIDE]
+    w = ev.sample_weights(m["label"], cfg)[rows]
+    return np.hstack([x[rows], team_block(m)[rows]]), m["label"][rows], w
+
+
+def _extra_rows(data: str, labels: str, cfg: dict) -> tuple:
+    """(x, y, w) of every extra match of `data`, in order, memoised in the process: every fold and
+    the final model append the same rows."""
+    return _extra_rows_cached(data, labels, tuple(sorted(cfg.items())))
+
+
+@cache
+def _extra_rows_cached(data: str, labels: str, cfg_items: tuple) -> tuple:
+    cfg = dict(cfg_items)
+    label_fn = label_function(labels)
+    xs, ys, ws = [], [], []
+    for _, matches in _extra_sources(data):
+        for index, (game, load) in enumerate(matches):
+            x, y, w = _extra_match_rows(load(), index, label_fn, cfg)
+            xs.append(x)
+            ys.append(y)
+            ws.append(w)
+            _log(f"extra rows {game}: {len(y)}")
+    return np.concatenate(xs), np.concatenate(ys), np.concatenate(ws)
