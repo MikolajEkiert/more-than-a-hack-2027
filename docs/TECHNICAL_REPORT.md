@@ -128,6 +128,14 @@ roles and the rules.
     the ball lost on 8% of play and 75% of stoppage time, in view during a quarter of the stoppage
     time and lying still before a third of the restarts, 1.9 m from the nearest player. It
     reproduces those, not the match's hardness (its two-pipeline agreement is 0.56).
+  - `match_regime_still` (task 15): `match_regime` plus a tracked ball lying still while play goes on
+    (a frozen track or a spare ball by a touch line), at the rate that reproduces the match's
+    still-ball statistics from its tracking alone (15.5 runs per 10 minutes, twice `match_regime`'s).
+- **Weighted by the match's composition** (task 15). The match is stoppage-rich: by our own labels
+  12-13 stoppages per 10 graded minutes against 9.6-10.7 in every validation truth, and 45-47% of its
+  possessions start right after a stoppage. Every 10-minute validation window can be weighted by how
+  often the match has windows of its stoppage density (`grid14.py compare --weighted`); Metrica and
+  IDSSE cover 80% of the match's windows, PFF all of them.
 - **IDSSE, out of fold**, as degraded for training (the ball lost at random) and in the automatic
   regime. Another provider, and the only labelled data with the ball in view during stoppages.
 - **PFF test matches.** Real broadcast tracking, used as delivered: it loses the ball in play like
@@ -194,6 +202,16 @@ Over the seven configurations measured last, version 4 is chosen on every held-o
   versions unlike every other set; neither of version 4's two main changes can act there. We
   therefore submit version 4, knowing rule A's verdict.
 
+**Checked again against what counts on this match** (task 15, docs/FUSION.md section 13). Weighted
+by the match's composition, version 4's gain is +0.059, +0.068 and +0.050 on the three Metrica
+profiles, +0.038 on PFF and +0.027 on IDSSE in the automatic regime (unweighted +0.052, +0.066,
++0.049, +0.046, +0.023). Under the match's own still-ball noise (`match_regime_still`) version 1
+drops from 0.655 to 0.609 and version 4 leads by +0.056 [+0.046, +0.062] (3 of 3). Its decoder
+settings were re-checked by a rule written before measuring (weighted evidence, readings 2/3
+`controlled` as the owner fixed, loss floors instead of win counts): lower stoppage costs lose; a
+higher cost for a change of team gains on the Metrica evidence (+0.0105) but loses on the PFF matches
+(-0.007), the only set with real noise, so version 4 is unchanged.
+
 **Where the rest is.** Replacing one input by the truth on the Metrica matches (version 1, the
 harsher published profile): perfect stoppages gave +0.07, a perfect team on frames without a ball
 +0.08, a perfect team on frames with a ball +0.23. Version 4 attacks the first and the last;
@@ -219,8 +237,10 @@ match hard (section 6) is simulated by none of the sets.
 - **The noise is simulated on the matches that share our provider.** The match's ball regime is
   reproduced (`match_regime`), its hardness only through a larger ball offset (`match_like`): our
   two pipelines agree on 0.46 of the match's possessions, and no simulated mechanism gets there
-  with the ball as close to the players as on the match. Identity switches, duplicated players and
-  a ball seen in the wrong place are not simulated anywhere.
+  with the ball as close to the players as on the match. A ball lying still in the wrong place is
+  simulated since task 15; identity switches and duplicated players are not simulated anywhere.
+- **A fifth of the match is outside the validation.** 20% of its 10-minute windows have 15 or more
+  stoppages, a density no Metrica or IDSSE window reaches (PFF has a few).
 - **The team features help where the ball is off its possessor.** They gain on all three Metrica
   profiles and change nothing on IDSSE and PFF, whose ball is precise or whose team is easy to read.
   How much of the match's difficulty is of that kind is not known.
@@ -254,7 +274,8 @@ takes under a minute.
   is not (its histogram sums depend on the number of threads), which is why the model is committed.
   The temporal network is retrained with `uv run --with torch==2.15.0 possession train-sequence
   --folds --final` (about 1.5 hours on a CPU); its numpy inference reproduces torch to 1e-14.
-- **Checked on:** macOS arm64, from the committed tree: two runs of `possession submit`, the same
-  file. Version 1's file was also reproduced in Linux containers; version 4's was not.
+- **Checked on:** macOS arm64, and from a fresh clone with an empty cache in a Linux arm64 container
+  and an emulated Linux x86-64 container (Debian 12; `scripts/repro_container.sh`): the same file,
+  the organisers' validator passing, each time. Not checked: Windows, a real x86-64 processor.
 - **Not the submission path:** `python -m solution.submission` and the notebooks in `notebooks/`
   are the supervised track's own experiments. They use another decoder and produce another file.

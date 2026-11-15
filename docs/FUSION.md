@@ -647,3 +647,75 @@ cache key like the package's model; the temporal network is committed (`models/s
 `6fd87cc4467530fa3b208a9dc9458d91949a8c98ef8a1b6ffc69cf9622fe29b7`, and the organisers' validator
 passes. With the team model removed from the cache the pipeline unpacks it and writes the same
 file; retrained from scratch, the team model is byte-identical to the committed one.
+
+## 13. An evaluation matched to the competition match (task 15, 2026-11-15)
+
+**What counts, and what the evaluation did not see.** The official score is spellF1 of one match,
+and the winners' repository may be re-run. Read through our own labels (aggregates only), that match
+differs from every validation truth in ways the metric is sensitive to:
+
+| | competition match (our labels) | validation truths |
+|---|---|---|
+| stoppages per 10 graded minutes | 12.1-12.8 | 9.6-10.7 |
+| possessions starting right after a stoppage | 0.45-0.47 | 0.28 (Metrica touch), 0.41 (controlled), 0.31 / 0.46 (IDSSE), 0.35 (PFF) |
+| median stoppage | 12-16 s | 15.5-20 s |
+| median possession, home / away | 9.4-9.9 / 5.6-6.4 s | symmetric |
+| 10-minute blocks with 15 or more stoppages | 20% | none in Metrica or IDSSE, 4% of PFF's |
+| still-ball runs per 10 minutes | 15.5 | 7.1 under `match_regime`, not simulated before |
+
+Nearly half of the match's possessions start at a stoppage, so its stoppage edges weigh more than in
+the validation; and version 4's gain over version 1 grows with a window's stoppage density
+(`label_free`: +0.040, +0.047, +0.068 for fewer than 9, 9-12, 12-15 stoppages per 10 minutes).
+
+**1. Reproducible on Linux.** `scripts/repro_container.sh` (task 08's check as a script): a fresh
+clone, an empty cache, the data mounted read-only, `uv sync --frozen`, `possession submit`. Version
+4 gives sha256 `6fd87cc4467530fa...` in a Linux arm64 container and in an emulated Linux x86-64
+container (Debian 12), as on macOS arm64.
+
+**2. Composition-weighted comparison** (`possession/composition.py`, `scripts/composition15.py`,
+`grid14.py compare --weighted`). Every 10-minute window of a validation set counts by the share of
+the match's blocks in its stoppage-density bin over the set's own share; readings 2/3 `controlled`,
+1/3 `touch` (the owner's choice for this task). The match's blocks (our labels): 0.10 / 0.30 / 0.40 /
+0.20 in the four bins; Metrica and IDSSE cover 80% of them, PFF all. Version 4 minus version 1:
+
+| set | unweighted | weighted, 5-95% |
+|---|---|---|
+| Metrica `label_free` | +0.052 | +0.059 [+0.045, +0.072] |
+| Metrica `match_like` | +0.066 | +0.068 [+0.053, +0.082] |
+| Metrica `match_regime` | +0.049 | +0.050 [+0.043, +0.058] |
+| PFF | +0.046 | +0.038 [+0.029, +0.047] |
+| IDSSE, automatic regime | +0.023 | +0.027 [+0.019, +0.036] |
+| IDSSE, plain | +0.001 | -0.001 [-0.007, +0.006] |
+
+**3. The match's own ball noise.** `validation.degrade` can lay a tracked ball still while play goes
+on (a frozen track, or a spare ball just outside a touch line; `still_ball_*`, own random stream, off
+by default; every earlier profile byte for byte). `match_regime_still` adds it to `match_regime` at
+the rate that reproduces the match's still-ball statistics from its tracking alone (18 events per 10
+live minutes: 15.57 still runs per 10 minutes against the match's 15.49; still share of tracked frames
+0.101 against 0.100). Under it version 1 falls from 0.655 to 0.609, and version 4's lead grows:
+
+| member | difference to version 1 | weighted | matches won |
+|---|---|---|---|
+| M6 (temporal network for stoppages) | +0.026 [+0.020, +0.031] | +0.025 | 3 of 3 |
+| d_team_m6 (plus the team features) | +0.052 [+0.042, +0.058] | +0.053 | 3 of 3 |
+| version 4 (plus the decoder options) | +0.056 [+0.046, +0.062] | +0.057 | 3 of 3 |
+
+**4. Version 4's stoppage settings under rule D** (tasks/15-match-matched-evaluation.md, written before
+measuring; reference version 4; evidence the four Metrica profiles above, weighted; floors PFF -0.005,
+IDSSE -0.010; K = 12 variants on version 4's evidence: stoppage plus restart cost 20 / 24 / 28 x line
+snap 0 / 6 s x turnover cost 5 / 6). Weighted difference to version 4, mean of the four profiles:
+
+| turnover 5 | line snap 0 | line snap 6 | | turnover 6 | line snap 0 | line snap 6 |
+|---|---|---|---|---|---|---|
+| cost 20 | -0.0065 | -0.0039 | | cost 20 | +0.0042 | +0.0067 |
+| cost 24 | -0.0047 | -0.0022 | | cost 24 | +0.0059 | +0.0083 |
+| cost 28 | -0.0023 | 0 (version 4) | | cost 28 | +0.0083 | +0.0105 |
+
+Lower stoppage costs lose even with the windows weighted toward the match's stoppage density, so
+version 4's 28 stands. Turnover cost 6 is chosen on every held-out match (+0.0105, 5% bound
++0.0076; `controlled` +0.014 to +0.020, `touch` -0.008 to +0.006) and fails the PFF floor: -0.0070
+weighted, -0.0042 unweighted (5 of 16 matches, interval below 0), while IDSSE gains (+0.008, +0.012,
+mostly under controlled3.5). It is a bet on the `controlled` reading, which the only set with real
+noise does not pay. **Version 4 stays**, now checked by an evaluation matched to the match on every
+point that counts: the file regenerates on Linux, the weighting by the match's composition and the
+match's still-ball noise both keep or widen its lead, and its decoder settings hold.

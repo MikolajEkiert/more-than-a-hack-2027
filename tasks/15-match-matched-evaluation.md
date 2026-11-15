@@ -1,5 +1,5 @@
 ---
-status: doing
+status: review
 owner: MikolajEkiert (Claude)
 stage: infra, decode
 ---
@@ -52,12 +52,12 @@ Stress test (step 3): version 4 must keep its advantage over version 1 under `ma
 found (M6, `d_team_m6`) and only the robust part is kept, decided by this rule.
 
 ## Acceptance criteria
-- [ ] version 4's file regenerated in Linux arm64 and x86-64 containers, same sha256
-- [ ] composition-weighted comparison (`grid14.py compare --weighted`, `decide-d`), tested; the
+- [x] version 4's file regenerated in Linux arm64 and x86-64 containers, same sha256
+- [x] composition-weighted comparison (`grid14.py compare --weighted`, `decide-d`), tested; the
       unweighted path unchanged
-- [ ] `match_regime_still` calibrated without labels; version 1, M6, d_team_m6, version 4 measured
-- [ ] version 4's stoppage settings re-checked by rule D
-- [ ] `make check` green; docs/DECISIONS.md, docs/FUSION.md section 13, TECHNICAL_REPORT updated
+- [x] `match_regime_still` calibrated without labels; version 1, M6, d_team_m6, version 4 measured
+- [x] version 4's stoppage settings re-checked by rule D
+- [x] `make check` green; docs/DECISIONS.md, docs/FUSION.md section 13, TECHNICAL_REPORT updated
 
 ## Log
 - 2026-11-15 · Claude · task opened from the approved plan; rule D written before measuring.
@@ -79,3 +79,8 @@ found (M6, `d_team_m6`) and only the robust part is kept, decided by this rule.
   (the match: 15.49) and a still share of tracked frames of 0.101 (0.100). Under it: V1 0.609 (0.655
   under match_regime), M6 +0.026, d_team_m6 +0.052, V4 +0.056 [+0.046, +0.062], 3 of 3 (weighted
   +0.057). Version 4 keeps, and widens, its lead under the match's own kind of ball noise.
+- 2026-11-15 · Claude · Step 4, rule D over twelve decoder variants on version 4's evidence: lower
+  stoppage costs lose (20 and 24 below 28 everywhere); turnover cost 6 is chosen on every held-out
+  match (+0.0105 weighted, threshold +0.0067, 5% bound +0.0076) and fails the PFF floor (-0.0070
+  weighted, -0.0042 unweighted, 5 of 16): a bet on `controlled`. Verdict: version 4 stays. Runs of
+  versions 1 and 4 under `match_regime_still`: experiments/runs/20261115T0200*.
