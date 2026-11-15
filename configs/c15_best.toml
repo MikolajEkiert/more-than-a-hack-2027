@@ -1,0 +1,23 @@
+# Task 15 candidate (version 5): version 4 (c14_best) with a turnover cost of 6 instead of 5. The
+# decoder family member d15_s28_l6_t6, adopted by rule D' and rule D with unit window weights
+# (tasks/15-match-matched-evaluation.md): +0.009 held out on the Metrica evidence, readings 2/3
+# `controlled`; PFF -0.003 to -0.004, IDSSE +0.007 to +0.013.
+name = "c15_best"
+
+[ball_state]
+method = "blend"
+sources = ["sequence", "kickoff_wait"]
+
+[team]
+method = "blend"
+sources = [{ method = "supervised", features = "v1+team" }]
+
+[decode]
+method = "switch_cost"
+turnover_cost = 6.0
+stop_cost = 16.0
+restart_cost = 12.0
+snap_start_s = 3.0
+snap_end_s = 3.0
+line_snap_s = 6.0
+line_margin_m = 0.5

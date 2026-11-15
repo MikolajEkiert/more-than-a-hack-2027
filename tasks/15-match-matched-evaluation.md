@@ -95,3 +95,23 @@ found (M6, `d_team_m6`) and only the robust part is kept, decided by this rule.
   c14_best`). Because it comes after rule D's verdict, a change to version 4 is adopted only if it
   passes rule D' and also rule D with every window weighing 1 (`--bins unit`); otherwise version 4
   stays. The composition-weighted numbers of steps 2-3 are reported again under rule D' weights.
+- 2026-11-15 · Claude · The instrument check, measured. Stoppages per 10 graded minutes, truth against
+  version 4's labels: label_free 10.47 / 10.01, match_like 10.47 / 10.13, match_regime 10.47 / 10.51,
+  match_regime_still 10.47 / 12.43, PFF 9.59 / 10.02, IDSSE 10.67 / 10.28 (auto 10.16). Version 4
+  counts stoppages right everywhere except under the still ball, where it adds short stoppages in
+  play (2.75 per 10 minutes, median 2.6 s). The match by version 4 alone: 11.67 per 10 minutes, bins
+  0.1 / 0.4 / 0.3 / 0.2 (10 blocks), what version 4 shows under match_regime_still (11.93; 0.10 /
+  0.37 / 0.47 / 0.07). Through that profile's confusion of bins the match's true shares come out
+  0.22 / 0.67 / 0.11 / 0 (V4+V1: 0.22 / 0.45 / 0.33 / 0), an ordinary game (Metrica truth 0.27 / 0.50 /
+  0.23 / 0). The match is not shown to be stoppage-rich; task 15's weighted numbers overweight dense
+  windows. Rule D' binning by version 4 still reads the noise-free profiles with a less biased
+  instrument than the match, so unit weights are the most defensible reading.
+- 2026-11-15 · Claude · Rule D' and rule D with unit weights over the twelve decoder variants: both
+  choose turnover cost 6 (d15_s28_l6_t6) on every held-out match. D': gain +0.0090 (threshold
+  +0.0067, 5% bound +0.0071), PFF -0.0027, IDSSE +0.0069, auto +0.0134. Unit: +0.0091 (bound
+  +0.0068), lowest (profile, reading) label_free/touch -0.0094, PFF -0.0038, IDSSE +0.0075, auto
+  +0.0121. Footprint 4.79 possessions per live minute, dead share 0.479. Both pass, so by the rule
+  written above the change is adopted: **version 5 = `configs/c15_best.toml`** (version 4 with
+  turnover cost 6). Caveat: the unweighted PFF difference (-0.0042, match level) was already printed
+  before rule D' was written. `possession submit` (two runs from a fresh parse, validator passes):
+  sha256 0167a8c6c243f1fdfa2d36916627a699586a93123d5de75e00a26b82198d5338.

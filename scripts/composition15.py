@@ -75,7 +75,7 @@ def truths() -> dict:
     return out
 
 
-def match(configs: list[str], path: Path | None = None) -> dict:
+def match(configs: list[str], out_path: Path | None = None) -> dict:
     from possession import config as config_mod
     from possession import pipeline, stages  # noqa: F401  (registers methods)
     from possession.loader import load_match
@@ -101,7 +101,7 @@ def match(configs: list[str], path: Path | None = None) -> dict:
         "mean_possessions_per_live_minute": mean("possessions_per_live_minute"),
     }
     OUT.mkdir(parents=True, exist_ok=True)
-    (path or OUT / "match.json").write_text(json.dumps(out, indent=1))
+    (out_path or OUT / "match.json").write_text(json.dumps(out, indent=1))
     return out
 
 
