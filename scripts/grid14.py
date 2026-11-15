@@ -44,6 +44,10 @@ BASE_SETS = {
     "pff": {"suite": "pff"},
 }
 N_BOOT = 2000
+# None: windows binned by their truth, the match by our labels (task 15 as pre-registered). A config
+# stem: both binned by that config's labels (`composition15.py predicted`), the same instrument.
+# "unit": every window weighs 1 (readings still weighted).
+INSTRUMENT: str | None = None
 FOOTPRINT = {"possessions_per_live_minute": (3.5, 7.0), "dead_share": (0.35, 0.50)}
 
 
@@ -247,7 +251,9 @@ def window_table(
     from possession import composition
 
     if window_weights is None:
-        window_weights = _composition15().window_weights(set_name)
+        window_weights = (
+            {} if INSTRUMENT == "unit" else _composition15().window_weights(set_name, INSTRUMENT)
+        )
     reading_weights = composition.READING_WEIGHTS if reading_weights is None else reading_weights
     ka, kb = {_key(c): c for c in a}, {_key(c): c for c in b}
     common = sorted(k for k in set(ka) & set(kb) if games is None or k[0] in games)
@@ -500,7 +506,12 @@ def main():
     parser.add_argument("--evidence", default="label_free,match_like")
     parser.add_argument("--weighted", action="store_true", help="compare: add the weighted line")
     parser.add_argument("--reference", default="c14_best", help="decide-d: the version to change")
+    parser.add_argument(
+        "--bins", default=None, help="weighting: bin match and windows by this config's labels"
+    )
     args = parser.parse_args()
+    global INSTRUMENT
+    INSTRUMENT = args.bins
     sets = [s for s in args.sets.split(",") if s]
     if args.action == "measure":
         measure(args.items, sets, args.jobs, args.force)

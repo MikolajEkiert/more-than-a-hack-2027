@@ -97,3 +97,50 @@ def test_weighted_comparison_with_unit_weights_is_the_plain_window_mean():
     zero_one = {(g, 0): 1.0 for g in ("g1", "g2")} | {(g, 1): 0.0 for g in ("g1", "g2")}
     only0 = grid14.weighted(a, b, "label_free", window_weights=zero_one, reading_weights=unit)
     assert np.isclose(only0["mean"], 0.15)
+
+
+def _composition15():
+    import importlib.util
+
+    from possession._paths import REPO_ROOT
+
+    spec = importlib.util.spec_from_file_location(
+        "composition15", REPO_ROOT / "scripts" / "composition15.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_stoppage_errors_separate_spurious_split_and_missed_stoppages():
+    c15 = _composition15()
+    n = 10 * MIN
+    half = np.ones(n, dtype=np.int8)
+    truth = _labels([("H", 100), ("D", 20), ("A", 100), ("D", 10), ("H", 370)], n)
+    # a 2 s stoppage inside true play, the first true stoppage split by a 4 s live spell, the
+    # second true stoppage missed
+    pred = _labels(
+        [("H", 50), ("D", 2), ("H", 48), ("D", 8), ("H", 4), ("D", 8), ("A", 110), ("H", 370)], n
+    )
+    out = c15.stoppage_errors(pred, truth, half, FPS)
+    assert out["true"] == 2 and out["pred"] == 3
+    assert out["spurious"] == 1 and out["split_extra"] == 1 and out["missed"] == 1
+    assert out["spurious_lengths"] == [2.0]
+
+
+def test_instrument_weights_bin_both_sides_by_the_same_labels(tmp_path, monkeypatch):
+    import json
+
+    c15 = _composition15()
+    monkeypatch.setattr(c15, "OUT", tmp_path)
+    (tmp_path / "pred" / "v").mkdir(parents=True)
+    # two seeds of one game, two windows: mean densities 8 (bin 0) and 13 (bin 2)
+    rows = [
+        {"game": "g", "seed": seed, "windows": [{"stoppages_per_10min": d} for d in densities]}
+        for seed, densities in ((0, (7.0, 12.0)), (1, (9.0, 14.0)))
+    ]
+    (tmp_path / "pred" / "v" / "label_free.json").write_text(json.dumps(rows))
+    (tmp_path / "match_v.json").write_text(json.dumps({"bin_shares": [0.25, 0.25, 0.5, 0.0]}))
+    assert c15.predicted_bins("label_free", "v") == {("g", 0): 0, ("g", 1): 2}
+    weights = c15.window_weights("label_free", instrument="v")
+    assert np.isclose(weights[("g", 0)], 0.5) and np.isclose(weights[("g", 1)], 1.0)

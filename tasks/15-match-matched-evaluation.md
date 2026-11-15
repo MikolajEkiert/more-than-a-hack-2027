@@ -1,5 +1,5 @@
 ---
-status: review
+status: doing
 owner: MikolajEkiert (Claude)
 stage: infra, decode
 ---
@@ -84,3 +84,14 @@ found (M6, `d_team_m6`) and only the robust part is kept, decided by this rule.
   match (+0.0105 weighted, threshold +0.0067, 5% bound +0.0076) and fails the PFF floor (-0.0070
   weighted, -0.0042 unweighted, 5 of 16): a bet on `controlled`. Verdict: version 4 stays. Runs of
   versions 1 and 4 under `match_regime_still`: experiments/runs/20261115T0200*.
+- 2026-11-15 · Claude · Correction, written before any number of it was computed. Re-checking step 2
+  showed that the weighting compares two instruments: the match is binned by our labels, the
+  validation windows by their truth. Version 4's labels count more stoppages than the truth: under
+  `match_regime_still` 12.4 against 10.5 per 10 graded minutes, the excess being stoppages lying in
+  true play (2.75 per 10 minutes, median 2.6 s; splits 0.25, missed 0.74), and its bin shares there
+  (0.12 / 0.33 / 0.38 / 0.17) are the match's by our labels (0.10 / 0.30 / 0.40 / 0.20). The
+  "stoppage-rich match" is then mostly our own over-counting. **Rule D'** = rule D with the match and
+  the windows both binned by version 4's labels (`composition15.py predicted`, `grid14.py --bins
+  c14_best`). Because it comes after rule D's verdict, a change to version 4 is adopted only if it
+  passes rule D' and also rule D with every window weighing 1 (`--bins unit`); otherwise version 4
+  stays. The composition-weighted numbers of steps 2-3 are reported again under rule D' weights.
