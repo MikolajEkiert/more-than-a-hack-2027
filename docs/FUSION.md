@@ -590,3 +590,60 @@ every match; its held-out gain under `match_regime` is +0.021 (touch +0.020, con
 C would change version 1 to M6. Rule A keeps version 1, on two conditions this section questions:
 +0.018 under `match_like` against a threshold five standard errors above zero, and the plain IDSSE
 veto, the set least like the match for a ball-state change.
+
+## 12. Version 4 (task 14, 2026-11-15)
+
+**What it is** (`configs/c14_best.toml`). Three changes to version 1, each measured on its own
+first (docs/DECISIONS.md, task 14):
+
+1. *Stoppages*: the ball-state evidence of the temporal network of task 13 (M6), plus the kick-off
+   rule. The network reads about 51 s of context and was trained in the mixed ball regime.
+2. *Team*: the team evidence of a LightGBM trained exactly as version 1's, with 73 team features
+   appended to the package's 203 (`possession/team_features.py`): players goal-side of the ball
+   per team, the carry of each team's nearest player, the per-player mean distance to the ball
+   over 0.4 to 2.4 s, the speed of each team's players toward the ball, each team's spread
+   against its own median. They target a visible but noisy ball, which is what the match has.
+3. *Decoder*: a stoppage that begins within 6 s after the tracked ball left the pitch begins
+   when it left (Law 9), and stopping plus restarting costs 28 instead of 24.
+
+**Measured** (spellF1 minus version 1, 5-95% interval over (match, 10-minute window) blocks,
+matches won):
+
+| set | version 1 | version 4 | difference | touch / controlled (IDSSE: 1.5 / 3.5) | won |
+|---|---|---|---|---|---|
+| Metrica `label_free` | 0.659 | 0.711 | +0.052 [+0.041, +0.059] | +0.046 / +0.059 | 3 of 3 |
+| Metrica `match_like` | 0.524 | 0.590 | +0.066 [+0.054, +0.074] | +0.064 / +0.068 | 3 of 3 |
+| Metrica `match_regime` | 0.655 | 0.703 | +0.049 [+0.040, +0.055] | +0.041 / +0.057 | 3 of 3 |
+| PFF, 16 test matches | 0.773 | 0.820 | +0.046 [+0.039, +0.055] | one reading | 16 of 16 |
+| IDSSE, automatic ball regime | 0.665 | 0.689 | +0.023 [+0.017, +0.031] | +0.025 / +0.021 | 7 of 7 |
+| IDSSE, plain | 0.671 | 0.671 | +0.001 [-0.007, +0.005] | +0.003 / -0.002 | 3 of 7 |
+
+Each part contributes on its own: the temporal network about +0.02 on the Metrica profiles and
++0.044 on PFF (M6), the team features about +0.024 to +0.041 more on the Metrica profiles and
+nothing on PFF and IDSSE (their ball is precise or their team easy to read), the decoder +0.002 to
++0.007 more on Metrica and nothing elsewhere. On the competition match, label-free: 271
+possessions against 300 (4.91 against 5.59 per live minute), dead share 0.479 against 0.494,
+7.6% of graded frames labelled differently.
+
+**The decision** over the family measured last (M5, M6, `b_bundle_m6`, `d_team`, `d_both`,
+`d_team_m6`, `c14_best`; the member is chosen on two Metrica matches and scored on the third):
+version 4 is chosen on every held-out match.
+
+| rule | evidence | vetoes | verdict |
+|---|---|---|---|
+| A (section 10) | passes: +0.052, +0.066, every reading >= +0.046, 3 of 3 | PFF passes (16 of 16); IDSSE fails: mean +0.0006, but 3 of 7 matches won where 5 are needed | version 1 |
+| B (task 14) | +0.059, 5% bound +0.050 (with `match_regime`: +0.056, +0.048) | PFF, `idsse_auto`, plain IDSSE >= -0.010: pass | version 4 |
+| C (section 11, proposal) | +0.051 under `match_regime`, 5% bound +0.043 | as a ball-state change (PFF veto): pass; as a team change (plain IDSSE, 5 of 7): fails | version 4 or version 1 |
+
+All three rules agree on the evidence. They differ only on whether winning five of the seven
+plain IDSSE matches is required of a change whose mean difference there is +0.0006: a set on which
+the ball is lost at random in 41% of play and is otherwise precise, so that neither of the two
+main changes can act there (section 11: its ranking of ball-state members is unrelated to every
+other set's).
+
+**Reproducible.** The team-feature model is committed (`models/team/`) and unpacked under its
+cache key like the package's model; the temporal network is committed (`models/sequence/`).
+`possession submit configs/c14_best.toml` writes the same file twice from a fresh parse, sha256
+`6fd87cc4467530fa3b208a9dc9458d91949a8c98ef8a1b6ffc69cf9622fe29b7`, and the organisers' validator
+passes. With the team model removed from the cache the pipeline unpacks it and writes the same
+file; retrained from scratch, the team model is byte-identical to the committed one.

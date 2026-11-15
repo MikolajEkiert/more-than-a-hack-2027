@@ -1,5 +1,5 @@
 ---
-status: doing
+status: review
 owner: MikolajEkiert (Claude, with sub-agents)
 stage: ball_state, team, decode, infra
 ---
@@ -54,8 +54,8 @@ of tasks 12-13 (M6), so it cannot be blind to them.
   `scripts/family_grid.py` in `.cache/family/`).
 
 ## Acceptance criteria
-- [ ] every direction measured on all sets, numbers in the log below and in docs/DECISIONS.md
-- [ ] the decision under rule A and rule B for the best candidate
+- [x] every direction measured on all sets, numbers in the log below and in docs/DECISIONS.md
+- [x] the decision under rule A and rule B for the best candidate (docs/FUSION.md section 12)
 - [x] an assessment of the verification method itself (docs/FUSION.md section 11)
 - [ ] `make check` green; the submitted file unchanged unless the owner decides otherwise
 
@@ -201,3 +201,13 @@ of tasks 12-13 (M6), so it cannot be blind to them.
   +0.046, -0.001 (4/7), -0.001 (3/7), +0.003 (8/16); footprint 5.33 possessions per live
   minute, dead 0.4914. Mildly under-fitted under the harsh profile only; alone it fails rule A
   (IDSSE -0.001, PFF 8 of 16) and rule B (PFF 8 of 16, `idsse_auto` -0.001).
+- 2026-11-15 · Claude · Merged the three workers (decoder, verification, team features). Under
+  `match_regime` the team-feature block keeps its gain (d_team_m6 +0.046, +0.026 over M6).
+  Version 4 = `configs/c14_best.toml` (M6 ball state + team-feature LightGBM + line exit 6 s and
+  costs 16/12): +0.052 / +0.066 / +0.049 on the three Metrica profiles (3 of 3 each), PFF +0.046
+  (16/16), IDSSE auto +0.023 (7/7), plain IDSSE +0.001 (3/7). Chosen on every held-out match; rule A:
+  version 1 (IDSSE win count only), rule B: version 4, rule C: depends on the stage it is read as.
+  Team model committed (`models/team/`), seeded under its cache key; same file from a cleared
+  model cache; retrain byte-identical with 8 threads, not with 4. `possession submit` from 8059fe6:
+  sha256 6fd87cc4..., validator passes. Technical report, README and FUSION section 12 describe
+  version 4; the upload choice is the owner's (version 1 frozen on `fallback/hybrid`).
