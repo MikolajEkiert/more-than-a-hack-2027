@@ -1,0 +1,24 @@
+# Task 14, decoder options (scripts/decoder_grid14.py): the bundle of the options positive on most of
+# the five sets and under both label readings, each at its best such setting: a stoppage starts where
+# the ball left the pitch up to 6 s before it (b_line6), and stoppage plus restart cost 28 instead of
+# 24 (b_stop16_restart12). Not in it: re-entry, short spells (PFF -0.005 to -0.083), the gap weight
+# and the change shift (negative on PFF and in the automatic ball regime).
+name = "b_bundle"
+
+[ball_state]
+method = "blend"
+sources = ["supervised", "kickoff_wait"]
+
+[team]
+method = "blend"
+sources = ["supervised"]
+
+[decode]
+method = "switch_cost"
+turnover_cost = 5.0
+stop_cost = 16.0
+restart_cost = 12.0
+snap_start_s = 3.0
+snap_end_s = 3.0
+line_snap_s = 6.0
+line_margin_m = 0.5
