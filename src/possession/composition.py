@@ -2,7 +2,9 @@
 
 The official score counts the possessions of one match. How dense its stoppages are decides how many
 of its possessions start or end at a stoppage, and so which errors weigh most: the competition match
-has 12-13 stoppages per 10 graded minutes by our own labels, every validation truth 9.6-10.7. These
+has about 12 stoppages per 10 graded minutes by version 4's labels (which count stoppages within
+about 0.5 of the truth on every validation set without a still ball), every validation truth
+9.6-10.7. These
 descriptors are computed the same way from the truth of another match and from our own labels of the
 competition match (aggregates only), on the 10-minute windows the validation already scores
 (`validation.windows`), so a validation window can be weighted by how often the competition match

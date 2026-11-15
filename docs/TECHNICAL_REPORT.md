@@ -131,11 +131,15 @@ roles and the rules.
   - `match_regime_still` (task 15): `match_regime` plus a tracked ball lying still while play goes on
     (a frozen track or a spare ball by a touch line), at the rate that reproduces the match's
     still-ball statistics from its tracking alone (15.5 runs per 10 minutes, twice `match_regime`'s).
-- **Weighted by the match's composition** (task 15). The match is stoppage-rich: by our own labels
-  12-13 stoppages per 10 graded minutes against 9.6-10.7 in every validation truth, and 45-47% of its
-  possessions start right after a stoppage. Every 10-minute validation window can be weighted by how
-  often the match has windows of its stoppage density (`grid14.py compare --weighted`); Metrica and
-  IDSSE cover 80% of the match's windows, PFF all of them.
+    A stress test: it lays the ball still in play about four times more often than the match shows,
+    because it also counts the still balls before the match's restarts as play.
+- **Weighted by the match's composition** (task 15). The match has more stoppages than the
+  validation matches. Version 4 counts stoppages within about 0.5 per 10 minutes of the truth on
+  every validation set; on the match it finds 12.1 per 10 graded minutes, against 9.6-10.7 in the
+  validation truths, and the excess has the lengths of ordinary stoppages. Every 10-minute validation
+  window can be weighted by how often the match has windows of its stoppage density
+  (`grid14.py compare --weighted --bins truth:c14_best`). Metrica and IDSSE cover 80% of the match's
+  windows, PFF all of them.
 - **IDSSE, out of fold**, as degraded for training (the ball lost at random) and in the automatic
   regime. Another provider, and the only labelled data with the ball in view during stoppages.
 - **PFF test matches.** Real broadcast tracking, used as delivered: it loses the ball in play like
@@ -203,14 +207,28 @@ Over the seven configurations measured last, version 4 is chosen on every held-o
   therefore submit version 4, knowing rule A's verdict.
 
 **Checked again against what counts on this match** (task 15, docs/FUSION.md section 13). Weighted
-by the match's composition, version 4's gain is +0.059, +0.068 and +0.050 on the three Metrica
-profiles, +0.038 on PFF and +0.027 on IDSSE in the automatic regime (unweighted +0.052, +0.066,
-+0.049, +0.046, +0.023). Under the match's own still-ball noise (`match_regime_still`) version 1
-drops from 0.655 to 0.609 and version 4 leads by +0.056 [+0.046, +0.062] (3 of 3). Its decoder
-settings were re-checked by a rule written before measuring (weighted evidence, readings 2/3
-`controlled` as the owner fixed, loss floors instead of win counts): lower stoppage costs lose; a
-higher cost for a change of team gains on the Metrica evidence (+0.0105) but loses on the PFF matches
-(-0.007), the only set with real noise, so version 4 is unchanged.
+by the match's composition, version 4's gain over version 1 is:
+- Metrica: +0.056, +0.068 and +0.050 on the three profiles;
+- PFF: +0.041;
+- IDSSE in the automatic regime: +0.026.
+
+Unweighted, the same gains are +0.052, +0.066, +0.049, +0.046 and +0.023. Under the still-ball
+stress profile (`match_regime_still`), version 1 drops from 0.655 to 0.609 and version 4 leads by
++0.056 [+0.046, +0.062], winning 3 of 3.
+
+Its decoder settings were re-checked by a rule written before measuring. The rule uses weighted
+evidence, reads the labels 2/3 `controlled` as the owner fixed, and has loss floors instead of win
+counts:
+- lower stoppage costs lose;
+- a higher price for a change of team (6) gains on the Metrica evidence (+0.010 held out) but loses
+  on the PFF matches (-0.007 weighted to the match, -0.004 unweighted), the only set with real
+  noise.
+
+So version 4 is unchanged. That configuration is kept as version 5 (`configs/c15_best.toml`, sha256
+`0167a8c6...`, reproduced like version 4). It is better than version 4 on six of seven sets and is
+the only one of the two that also passes the team's earlier rule A: plain IDSSE won 6 of 7 against
+version 1. It is a bet on the `controlled` reading (+0.012 to +0.020 under it, -0.010 to +0.005
+under `touch`).
 
 **Where the rest is.** Replacing one input by the truth on the Metrica matches (version 1, the
 harsher published profile): perfect stoppages gave +0.07, a perfect team on frames without a ball
@@ -233,14 +251,16 @@ match hard (section 6) is simulated by none of the sets.
 ## 6. Limitations
 
 - **We do not know which reading of possession the ground truth follows.** The price for a change
-  of team (5) is the value that does not lose under either reading; version 4 gains under both.
+  of team (5) is the value that does not lose under either reading; version 4 gains under both. A
+  price of 6 (version 5) would gain about 0.01 more if the ground truth reads `controlled`.
 - **The noise is simulated on the matches that share our provider.** The match's ball regime is
   reproduced (`match_regime`), its hardness only through a larger ball offset (`match_like`): our
   two pipelines agree on 0.46 of the match's possessions, and no simulated mechanism gets there
   with the ball as close to the players as on the match. A ball lying still in the wrong place is
-  simulated since task 15; identity switches and duplicated players are not simulated anywhere.
-- **A fifth of the match is outside the validation.** 20% of its 10-minute windows have 15 or more
-  stoppages, a density no Metrica or IDSSE window reaches (PFF has a few).
+  simulated since task 15, more often than on the match; identity switches and duplicated players
+  are not simulated anywhere.
+- **A fifth of the match is outside the validation.** By version 4's labels, 20% of its 10-minute
+  windows have 15 or more stoppages, a density no Metrica or IDSSE window reaches (PFF has a few).
 - **The team features help where the ball is off its possessor.** They gain on all three Metrica
   profiles and change nothing on IDSSE and PFF, whose ball is precise or whose team is easy to read.
   How much of the match's difficulty is of that kind is not known.

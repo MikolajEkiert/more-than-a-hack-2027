@@ -692,7 +692,9 @@ on (a frozen track, or a spare ball just outside a touch line; `still_ball_*`, o
 by default; every earlier profile byte for byte). `match_regime_still` adds it to `match_regime` at
 the rate that reproduces the match's still-ball statistics from its tracking alone (18 events per 10
 live minutes: 15.57 still runs per 10 minutes against the match's 15.49; still share of tracked frames
-0.101 against 0.100). Under it version 1 falls from 0.655 to 0.609, and version 4's lead grows:
+0.101 against 0.100). Part 5 shows it lays the ball still in play about four times more often than the
+match does, so it is a stress test. Under it version 1 falls from 0.655 to 0.609, and version 4's lead
+grows:
 
 | member | difference to version 1 | weighted | matches won |
 |---|---|---|---|
@@ -719,3 +721,53 @@ mostly under controlled3.5). It is a bet on the `controlled` reading, which the 
 noise does not pay. **Version 4 stays**, now checked by an evaluation matched to the match on every
 point that counts: the file regenerates on Linux, the weighting by the match's composition and the
 match's still-ball noise both keep or widen its lead, and its decoder settings hold.
+
+**5. Correction: what the match's stoppage count means** (after part 4). The weighting bins the match
+by our labels and the windows by their truth, so it is only as good as our labels' stoppage count.
+Stoppages per 10 graded minutes, truth against version 4:
+
+| set | truth | version 4 | stoppages in true play (median length) |
+|---|---|---|---|
+| Metrica `label_free` | 10.47 | 10.01 | 1.03 (7.9 s) |
+| Metrica `match_like` | 10.47 | 10.13 | 1.53 (8.0 s) |
+| Metrica `match_regime` | 10.47 | 10.51 | 0.80 (8.7 s) |
+| Metrica `match_regime_still` | 10.47 | 12.43 | 2.75 (2.6 s) |
+| PFF | 9.59 | 10.02 | 0.86 (9.5 s) |
+| IDSSE, plain / automatic | 10.67 | 10.28 / 10.16 | 0.36 / 0.20 |
+
+Version 4 counts stoppages within about 0.5 of the truth everywhere except under the still ball. A
+first reading took the match's 12 for the same over-count and wrote a rule D' that bins both sides
+by version 4, which chose turnover cost 6. The lengths say otherwise (stoppages per 10 minutes, all by
+version 4):
+
+| | <2 s | 2-4 s | 4-8 s | 8-15 s | 15-30 s | 30 s+ | all |
+|---|---|---|---|---|---|---|---|
+| the match | 0.00 | 0.94 | 2.46 | 2.36 | 3.78 | 2.55 | 12.09 |
+| Metrica `match_regime` | 0.16 | 0.57 | 1.69 | 2.49 | 2.93 | 2.67 | 10.51 |
+| Metrica `match_regime_still` | 0.40 | 2.01 | 1.81 | 2.60 | 2.96 | 2.65 | 12.43 |
+
+The still ball's signature is an excess below 4 s. The match's excess lies at 2-8 s and 15-30 s, the
+lengths of ordinary stoppages. The match most likely has about 15% more stoppages than the validation
+matches, as part 2 read, and `match_regime_still` overstates its still ball in play about fourfold.
+Rule D' is withdrawn. The best-founded weighting bins the windows by their truth and the match by
+version 4 alone (`--bins truth:c14_best`; the match's bins 0.1 / 0.4 / 0.3 / 0.2). Under it:
+
+| set | version 4 minus version 1, weighted | version 5 minus version 4, unweighted / weighted |
+|---|---|---|
+| Metrica `label_free` | +0.056 [+0.044, +0.067] | +0.001 / +0.007 |
+| Metrica `match_like` | +0.068 [+0.055, +0.080] | +0.013 / +0.015 |
+| Metrica `match_regime` | +0.050 [+0.043, +0.057] | +0.006 / +0.010 |
+| Metrica `match_regime_still` | +0.057 [+0.049, +0.065] | +0.006 / +0.009 |
+| PFF | +0.041 [+0.032, +0.050] | -0.004 / -0.007 |
+| IDSSE, automatic regime | +0.026 [+0.018, +0.033] | +0.010 / +0.013 |
+| IDSSE, plain | -0.001 [-0.007, +0.006] | +0.006 / +0.008 |
+
+Rule D under this weighting keeps version 4: turnover cost 6 gains +0.0100 held out (threshold +0.0067,
+bound +0.0074) and fails the PFF floor (-0.0068 against -0.005). Unweighted, and under the withdrawn
+D', it would pass (PFF -0.0038 and -0.0027). The verdict therefore rests on the match having more
+stoppages than the validation matches, which the lengths support. **Version 4 stays.**
+
+Version 5 (`configs/c15_best.toml`, version 4 with turnover cost 6, sha256 `0167a8c6...`, reproduced
+in both Linux containers) is the documented alternative. It is a bet on the `controlled` reading:
++0.012 to +0.020 under it, -0.010 to +0.005 under `touch`, -0.004 to -0.007 on PFF. Against version 1
+it passes the team's rule A (plain IDSSE 6 of 7), which version 4 fails (3 of 7).

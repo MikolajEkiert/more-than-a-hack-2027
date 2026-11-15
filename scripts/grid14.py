@@ -44,9 +44,10 @@ BASE_SETS = {
     "pff": {"suite": "pff"},
 }
 N_BOOT = 2000
-# None: windows binned by their truth, the match by our labels (task 15 as pre-registered). A config
-# stem: both binned by that config's labels (`composition15.py predicted`), the same instrument.
-# "unit": every window weighs 1 (readings still weighted).
+# None: windows binned by their truth, the match by our labels (task 15 as pre-registered: the mean
+# of version 4 and version 1). "truth:<stem>": the match by <stem>'s labels alone (task 15's final
+# reading, `composition15.py predicted` writes it). A config stem: both binned by that config's
+# labels. "unit": every window weighs 1 (readings still weighted).
 INSTRUMENT: str | None = None
 FOOTPRINT = {"possessions_per_live_minute": (3.5, 7.0), "dead_share": (0.35, 0.50)}
 

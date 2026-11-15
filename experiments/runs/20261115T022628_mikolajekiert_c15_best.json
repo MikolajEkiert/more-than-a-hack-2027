@@ -1,0 +1,62 @@
+{
+  "author": "MikolajEkiert",
+  "config": {
+    "ball_state": {
+      "method": "blend",
+      "sources": [
+        "sequence",
+        "kickoff_wait"
+      ]
+    },
+    "decode": {
+      "line_margin_m": 0.5,
+      "line_snap_s": 6.0,
+      "method": "switch_cost",
+      "restart_cost": 12.0,
+      "snap_end_s": 3.0,
+      "snap_start_s": 3.0,
+      "stop_cost": 16.0,
+      "turnover_cost": 6.0
+    },
+    "game": null,
+    "name": "c15_best",
+    "team": {
+      "method": "blend",
+      "sources": [
+        {
+          "features": "v1+team",
+          "method": "supervised"
+        }
+      ]
+    }
+  },
+  "config_path": "configs/c15_best.toml",
+  "csv_sha256": "0167a8c6c243f1fdfa2d36916627a699586a93123d5de75e00a26b82198d5338",
+  "diagnostics": {
+    "fps": 25,
+    "home_share": 0.6095,
+    "label_share_graded": {
+      "A": 0.2034,
+      "D": 0.4791,
+      "H": 0.3175,
+      "X": 0.0
+    },
+    "mean_possession_s": 12.54,
+    "n_frames": 199319,
+    "n_possessions": 264
+  },
+  "git_branch": "task/15-match-matched-evaluation",
+  "git_commit": "68cdd2c",
+  "git_dirty": false,
+  "name": "c15_best",
+  "note": "task 15: version 5 = version 4 with turnover cost 6 (adopted by rule D' and unit-weight rule D), on the match",
+  "public_sanity": {
+    "macroF1": 0.8608,
+    "n_gt_possessions": 17,
+    "n_pred_possessions": 14,
+    "note": "public 5 min, 17 possessions: sanity only, never for choosing between versions",
+    "spellF1": 0.7226
+  },
+  "seconds": 13.9,
+  "time_utc": "2026-11-15T02:26:28Z"
+}

@@ -1,5 +1,5 @@
 ---
-status: doing
+status: review
 owner: MikolajEkiert (Claude)
 stage: infra, decode
 ---
@@ -115,3 +115,26 @@ found (M6, `d_team_m6`) and only the robust part is kept, decided by this rule.
   turnover cost 6). Caveat: the unweighted PFF difference (-0.0042, match level) was already printed
   before rule D' was written. `possession submit` (two runs from a fresh parse, validator passes):
   sha256 0167a8c6c243f1fdfa2d36916627a699586a93123d5de75e00a26b82198d5338.
+- 2026-11-15 · Claude · Rule D's premise tested, and it fails. Stoppages per 10 graded minutes by
+  length (<2 / 2-4 / 4-8 / 8-15 / 15-30 / 30+ s), all by version 4: the match 0.00 / 0.94 / 2.46 /
+  2.36 / 3.78 / 2.55 (12.09); Metrica under match_regime 0.16 / 0.57 / 1.69 / 2.49 / 2.93 / 2.67
+  (10.51; truth 10.47); under match_regime_still 0.40 / 2.01 / 1.81 / 2.60 / 2.96 / 2.65 (12.43). The
+  still ball's signature is an excess below 4 s (+1.7). The match's excess over match_regime (+1.6)
+  lies at 2-8 s (+1.1) and 15-30 s (+0.9), the lengths of ordinary stoppages; its 2-4 s count is 0.94,
+  not 2.0. Version 4 counts stoppages within about 0.5 of the truth on every set without the still
+  ball, so the match most likely does have about 15% more stoppages, as step 2 first read.
+  `match_regime_still` lays the ball still in play about four times more often than the match shows:
+  it attributes to play the still balls before the match's extra restarts. It stays a stress test.
+  Rule D', written on the opposite premise, is withdrawn, and with it the adoption of version 5 above.
+  The best-founded reading bins the windows by their truth and the match by version 4 alone, the
+  instrument that is unbiased under match-like noise (`--bins truth:c14_best`). Under it rule D keeps
+  version 4: evidence +0.0100 (threshold +0.0067, bound +0.0074), PFF -0.0068 (floor -0.005).
+  Version 4 minus version 1 under it: label_free +0.056, match_like +0.068, match_regime +0.050,
+  match_regime_still +0.057, PFF +0.041, IDSSE auto +0.026, plain IDSSE -0.001. **Version 4 stays.**
+- 2026-11-15 · Claude · Version 5 (`configs/c15_best.toml`) is kept as the documented alternative.
+  Reproduced on macOS and in both Linux containers: sha256 0167a8c6c243f1fd..., the validator passes.
+  Against version 4 it gains on six of seven sets (unweighted: label_free +0.001, match_like +0.013,
+  match_regime +0.006, still +0.006, IDSSE +0.006 and +0.010) and loses on PFF (-0.004, 5 of 16;
+  -0.007 weighted to the match). Against version 1 it passes the team's rule A, which version 4
+  fails: plain IDSSE won 6 of 7 instead of 3 of 7. Runs: experiments/runs/20261115T022628 to
+  T023616 (c15_best).

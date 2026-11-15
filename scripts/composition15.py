@@ -122,12 +122,17 @@ def load_match() -> dict:
 def window_weights(set_name: str, instrument: str | None = None) -> dict:
     """{(game, window index): weight} for the windows of a set: the match's share of the window's
     stoppage-density bin over the set's own share of it. Bins by the truth and the match's labels
-    (task 15's step 2) unless `instrument` names a configuration measured by `predicted`, whose
-    labels then bin both the match and the set's windows."""
-    if instrument is not None:
+    (task 15's step 2: the mean over version 4 and version 1) unless `instrument` is
+    "truth:<stem>" (the windows by their truth, the match by <stem>'s labels alone: task 15's final
+    reading) or names a configuration measured by `predicted`, whose labels then bin both."""
+    if instrument is not None and not instrument.startswith("truth:"):
         return _instrument_weights(set_name, instrument)
     group = load_truths()[group_of(set_name)]
-    target = np.asarray(load_match()["bin_shares"])
+    if instrument is None:
+        target = np.asarray(load_match()["bin_shares"])
+    else:  # "truth:<stem>": the windows by their truth, the match by <stem>'s labels alone
+        stem = instrument.split(":", 1)[1]
+        target = np.asarray(json.loads((OUT / f"match_{stem}.json").read_text())["bin_shares"])
     windows = [w for game in group.values() for w in game]
     weights = composition.importance(target, composition.bin_shares(windows))
     return {
@@ -203,23 +208,32 @@ def stoppage_errors(labels, truth, half: np.ndarray, fps: int) -> dict:
 LENGTH_EDGES = (2.0, 4.0, 8.0, 15.0, 30.0)  # seconds; bins <2, 2-4, 4-8, 8-15, 15-30, >=30
 
 
-def stoppage_lengths(labels, half: np.ndarray, fps: int) -> tuple[np.ndarray, float]:
-    """Counts of stoppages (D spells inside a half) per length bin (`LENGTH_EDGES`), and the
-    graded minutes they were counted over."""
+def stoppage_lengths(labels, half: np.ndarray, fps: int):
+    """Per length bin (`LENGTH_EDGES`): the stoppages (D spells inside a half), those between two
+    spells of the same team (a stoppage in play keeps the team; after a real one the other team
+    restarts about half the time), and the graded minutes they were counted over."""
     import possession_metrics as pm
 
     codes = composition._codes(labels)
-    lengths, minutes = [], 0.0
+    nb = len(LENGTH_EDGES) + 1
+    counts, same, minutes = np.zeros(nb), np.zeros(nb), 0.0
     for a0, b0 in _halves(np.asarray(half)):
         minutes += (b0 - a0) / fps / 60
-        lengths += [(b - a) / fps for a, b, k in pm.segments(codes, [(a0, b0)]) if k == pm.D]
-    counts = np.bincount(np.digitize(lengths, LENGTH_EDGES), minlength=len(LENGTH_EDGES) + 1)
-    return counts.astype(np.float64), minutes
+        segs = pm.segments(codes, [(a0, b0)])
+        for i, (a, b, k) in enumerate(segs):
+            if k != pm.D:
+                continue
+            j = int(np.digitize((b - a) / fps, LENGTH_EDGES))
+            counts[j] += 1
+            if 0 < i < len(segs) - 1 and segs[i - 1][2] == segs[i + 1][2] != pm.D:
+                same[j] += 1
+    return counts, same, minutes
 
 
 def lengths(configs: list[str], sets: list[str]) -> None:
-    """Stoppages per 10 graded minutes by length: the match by each config's labels, and every set
-    by the truth and by each config's labels (aggregates only)."""
+    """Stoppages per 10 graded minutes by length, and the share between two spells of one team:
+    the match by each config's labels, every set by the truth and by each config's labels
+    (aggregates only)."""
     from possession import config as config_mod
     from possession import pipeline, stages  # noqa: F401  (registers methods)
     from possession.loader import load_match
@@ -227,28 +241,33 @@ def lengths(configs: list[str], sets: list[str]) -> None:
     head = ["<2", "2-4", "4-8", "8-15", "15-30", ">=30"]
     print(f"{'stoppages per 10 min':<44}" + "".join(f"{h:>7}" for h in head) + "    all")
 
-    def show(label, counts, minutes):
+    def show(label, counts, same, minutes):
         per10 = counts / minutes * 10
         print(f"{label:<44}" + "".join(f"{v:>7.2f}" for v in per10) + f"{per10.sum():>7.2f}")
+        share = np.divide(same, counts, out=np.full_like(same, np.nan), where=counts > 0)
+        text = "".join(f"{v:>7.2f}" for v in share)
+        print(f"{'  share with the same team before and after':<44}{text}"
+              f"{same.sum() / max(counts.sum(), 1):>7.2f}")  # fmt: skip
 
     cfgs = {Path(c).stem: config_mod.load(c) for c in configs}
     game = load_match(verbose=False)
     for stem, cfg in cfgs.items():
-        show(
-            f"match, {stem}", *stoppage_lengths(pipeline.run(cfg, game).labels, game.half, game.fps)
-        )
+        labels = pipeline.run(cfg, game).labels
+        show(f"match, {stem}", *stoppage_lengths(labels, game.half, game.fps))
     grid14 = _grid14()
+    nb = len(LENGTH_EDGES) + 1
     for set_name in sets:
-        acc = {"truth": [np.zeros(6), 0.0], **{s: [np.zeros(6), 0.0] for s in cfgs}}
+        acc = {k: [np.zeros(nb), np.zeros(nb), 0.0] for k in ["truth", *cfgs]}
         for _, _, match, truths in validation.conditions(**grid14.set_kwargs(set_name)):
             pairs = [("truth", truths[sorted(truths)[0]])]
             pairs += [(s, pipeline.run(c, match).labels) for s, c in cfgs.items()]
             for key, labels in pairs:
-                counts, minutes = stoppage_lengths(labels, match.half, match.fps)
+                counts, same, minutes = stoppage_lengths(labels, match.half, match.fps)
                 acc[key][0] += counts
-                acc[key][1] += minutes
-        for key, (counts, minutes) in acc.items():
-            show(f"{set_name}, {key}", counts, minutes)
+                acc[key][1] += same
+                acc[key][2] += minutes
+        for key, (counts, same, minutes) in acc.items():
+            show(f"{set_name}, {key}", counts, same, minutes)
 
 
 def predicted_one(job) -> tuple[str, dict, float]:
