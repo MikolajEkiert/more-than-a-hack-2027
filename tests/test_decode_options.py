@@ -9,6 +9,7 @@ from possession.stages.decode import (
     _viterbi3,
     shift_changes,
     short_spells,
+    short_stoppages,
     snap_stoppage_edges,
     snap_to_line_exit,
     snap_to_reentry,
@@ -87,6 +88,8 @@ def test_default_output_equals_the_previous_implementation(params):
         "short_spell_s": 2.0,
         "short_spell_policy": "keep",
         "change_shift_frames": 0,
+        "min_stop_s": 0.0,
+        "min_stop_min_alive": 0.5,
     }
     np.testing.assert_array_equal(switch_cost(match, p_alive, p_home, **params, **off), before)
 
@@ -102,6 +105,8 @@ def test_every_option_gives_valid_labels_and_rejects_an_unknown_policy():
         "short_spell_policy": "dead",
         "short_spell_max_llr": 2.2,
         "change_shift_frames": 4,
+        "min_stop_s": 4.0,
+        "min_stop_min_alive": 0.2,
     }
     labels = switch_cost(match, p_alive, p_home, **V1_SNAP, **options)
     assert labels.shape == (match.n_frames,) and set(labels.tolist()) <= {"H", "A", "D", "X"}
@@ -213,6 +218,33 @@ def test_short_spells_between_two_of_the_other_team():
     chain = _labels(n, (200, 220, "A"), (220, 230, "H"), (230, 600, "A"))  # 0.8 s A, 0.4 s H
     resolved = short_spells(match, chain, home, 2.0, "merge")
     assert (resolved[:200] == "H").all() and (resolved[200:] == "A").all()  # shortest first
+
+
+def test_short_stoppages_inside_one_teams_possession_become_that_team():
+    n = 600
+    match = _match(np.full((n, 2), 50.0))
+    alive = np.full(n, 0.9)
+    alive[200:250] = 0.1  # 2 s stoppage, weak-ish dead evidence (mean 0.1)
+    inside = _labels(n, (200, 250, "D"))  # H, 2 s D, H
+    assert (short_stoppages(match, inside, alive, 3.0) == "H").all()
+    np.testing.assert_array_equal(short_stoppages(match, inside, alive, 2.0), inside)  # not shorter
+    np.testing.assert_array_equal(short_stoppages(match, inside, alive, 0.0), inside)  # off
+    np.testing.assert_array_equal(short_stoppages(match, inside, alive, 3.0, 0.2), inside)
+    assert (short_stoppages(match, inside, alive, 3.0, 0.09) == "H").all()  # mean 0.1 >= 0.09
+    away = _labels(n, (200, 250, "D"), (250, 600, "A"))  # H, D, A: a real hand-over stays
+    np.testing.assert_array_equal(short_stoppages(match, away, alive, 3.0), away)
+    edge = _labels(n, (0, 50, "D"), (560, 600, "D"))  # at the edges of the half
+    np.testing.assert_array_equal(short_stoppages(match, edge, alive, 3.0), edge)
+    half = np.ones(n, dtype=np.int8)
+    half[250:] = 2  # neighbours in different halves
+    np.testing.assert_array_equal(
+        short_stoppages(_match(np.full((n, 2), 50.0), half), inside, alive, 3.0), inside
+    )
+    beside_x = _labels(n, (200, 250, "D"), (250, 260, "X"))
+    np.testing.assert_array_equal(short_stoppages(match, beside_x, alive, 3.0), beside_x)
+    two = _labels(n, (100, 140, "D"), (300, 400, "D"))  # 1.6 s goes, 4 s stays
+    out = short_stoppages(match, two, alive, 3.0)
+    assert (out[100:140] == "H").all() and (out[300:400] == "D").all()
 
 
 def test_shift_moves_direct_changes_earlier_only():

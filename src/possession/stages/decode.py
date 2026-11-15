@@ -277,6 +277,48 @@ def short_spells(
     return out
 
 
+def short_stoppages(
+    match: Match,
+    labels: np.ndarray,
+    p_alive,
+    max_s: float,
+    min_alive: float = 0.0,
+) -> np.ndarray:
+    """Relabel short stoppages lying inside one team's possession as that team.
+
+    A D spell shorter than `max_s` whose neighbours, in the same half, are spells of one and the
+    same team becomes that team: a stoppage that the same team both precedes and follows, and too
+    short for a restart, is more likely noise in the ball-state evidence (a still or lost ball)
+    than a real stoppage. With `min_alive` above zero only spells whose mean `p_alive` is at least
+    that value are touched. Spells between two different teams, at a half edge or next to X stay.
+    """
+    out = labels.copy()
+    if max_s <= 0:
+        return out
+    n = len(labels)
+    starts, stops = features.runs(labels == "D")
+    if not len(starts):
+        return out
+    inner = (starts > 0) & (stops < n)
+    starts, stops = starts[inner], stops[inner]
+    before, after = labels[starts - 1], labels[stops]
+    keep = (
+        (stops - starts < max_s * match.fps)
+        & (before == after)
+        & np.isin(before, ("H", "A"))
+        & (match.half[starts - 1] == match.half[stops])
+    )
+    if min_alive > 0:
+        alive = np.nan_to_num(np.asarray(p_alive, dtype=np.float64), nan=0.0)
+        total = np.concatenate(([0.0], np.cumsum(alive)))
+        keep &= (total[stops] - total[starts]) / (stops - starts) >= min_alive
+    for start, stop, team in zip(
+        starts[keep].tolist(), stops[keep].tolist(), before[keep].tolist(), strict=True
+    ):
+        out[start:stop] = team
+    return out
+
+
 def shift_changes(labels: np.ndarray, frames: int) -> np.ndarray:
     """Move every direct H <-> A change `frames` earlier; the spell before keeps one frame."""
     out = labels.copy()
@@ -318,6 +360,8 @@ def switch_cost(
     short_spell_policy: str = "keep",
     short_spell_max_llr: float = 0.0,
     change_shift_frames: int = 0,
+    min_stop_s: float = 0.0,
+    min_stop_min_alive: float = 0.0,
 ) -> np.ndarray:
     """Most likely H / A / D sequence under switching costs, decoded per half (no smoothing lag).
 
@@ -333,6 +377,9 @@ def switch_cost(
         (`snap_stoppage_edges`)
       * `line_snap_s`: a stoppage starts where the ball left the pitch (`snap_to_line_exit`)
       * `reentry_snap_s`: a restart where the ball came back in (`snap_to_reentry`)
+      * `min_stop_s`, `min_stop_min_alive`: a stoppage shorter than `min_stop_s` between two
+        spells of the same team becomes that team (`short_stoppages`; the minimum stoppage
+        length is an idea of other teams of the hackathon, task 16)
       * `short_spell_s`, `short_spell_policy`, `short_spell_max_llr`: short spells between two
         spells of the other team become D or merge (`short_spells`)
       * `change_shift_frames`: every direct H <-> A change moves earlier (`shift_changes`)
@@ -377,6 +424,8 @@ def switch_cost(
         labels = snap_to_line_exit(match, labels, line_snap_s, line_margin_m)
     if reentry_snap_s > 0:
         labels = snap_to_reentry(match, labels, reentry_snap_s, line_margin_m, restart_speed_m_s)
+    if min_stop_s > 0:
+        labels = short_stoppages(match, labels, p_alive, min_stop_s, min_stop_min_alive)
     if short_spell_s > 0 and short_spell_policy != "keep":
         labels = short_spells(
             match, labels, p_home, short_spell_s, short_spell_policy, short_spell_max_llr

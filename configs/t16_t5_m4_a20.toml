@@ -1,0 +1,23 @@
+# Task 16 family member: version 4's decoder (turnover cost 5) plus a minimum
+# stoppage of 4 s between two spells of the same team, only where the mean p_alive is at least 0.2.
+name = "t16_t5_m4_a20"
+
+[ball_state]
+method = "blend"
+sources = ["sequence", "kickoff_wait"]
+
+[team]
+method = "blend"
+sources = [{ method = "supervised", features = "v1+team" }]
+
+[decode]
+method = "switch_cost"
+turnover_cost = 5.0
+stop_cost = 16.0
+restart_cost = 12.0
+snap_start_s = 3.0
+snap_end_s = 3.0
+line_snap_s = 6.0
+line_margin_m = 0.5
+min_stop_s = 4.0
+min_stop_min_alive = 0.2
