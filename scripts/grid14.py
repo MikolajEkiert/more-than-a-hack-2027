@@ -4,6 +4,8 @@
     uv run python scripts/grid14.py compare NAME [NAME ...] [--sets S,...] [--against V1]
     uv run python scripts/grid14.py decide NAME [NAME ...]        # rule A (docs/FUSION.md s. 10)
     uv run python scripts/grid14.py decide-b NAME [NAME ...] [--evidence P,...]   # rule B (task 14)
+    uv run python scripts/grid14.py decide-d NAME [NAME ...] [--reference c14_best]   # rule D
+    uv run python scripts/grid14.py compare NAME ... --weighted   # with the weighted line (task 15)
     uv run python scripts/grid14.py footprint CONFIG [CONFIG ...]
 
 A member's name is its config's file stem, except the members of scripts/family_grid.py (V1 is
@@ -186,7 +188,7 @@ def paired(a: list[dict], b: list[dict], games=None) -> dict:
     }
 
 
-def compare(names: list[str], sets: list[str], against: str) -> None:
+def compare(names: list[str], sets: list[str], against: str, weighted_too: bool = False) -> None:
     for set_name in sets:
         if not has(against, set_name):
             print(f"{set_name}: no cells for {against}")
@@ -205,6 +207,171 @@ def compare(names: list[str], sets: list[str], against: str) -> None:
                 f"  {name:<32} {p['a']:.4f}  diff {p['mean']:+.4f} {iv_text}  {reading_text}"
                 f"  won {p['won']}/{p['n_games']}"
             )
+            if weighted_too:
+                w = weighted(load(name, set_name), ref, set_name)
+                wiv = w["interval"]
+                reading_text = "  ".join(f"{r} {v:+.4f}" for r, v in w["by_reading"].items())
+                print(
+                    f"  {'':<32} {'':6}  weighted {w['mean']:+.4f} [{wiv[0]:+.4f}, {wiv[1]:+.4f}]"
+                    f"  {reading_text}"
+                )
+
+
+# -- weighted by the competition match's possession structure (task 15) -------------------------
+
+
+def _composition15():
+    spec = importlib.util.spec_from_file_location(
+        "composition15", REPO_ROOT / "scripts" / "composition15.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def window_table(
+    a: list[dict],
+    b: list[dict],
+    set_name: str,
+    games=None,
+    window_weights=None,
+    reading_weights=None,
+) -> dict:
+    """{(game, window): (value, weight, {reading: diff})} for the paired window differences a - b.
+
+    A window's value is the mean over seeds of its spellF1 difference, combined over the label
+    readings with `reading_weights` (default `composition.READING_WEIGHTS`, renormalised over the
+    readings present); its weight is the competition match's share of the window's stoppage-density
+    bin over the set's share (`composition15.window_weights`), or 1 with `window_weights={}`.
+    """
+    from possession import composition
+
+    if window_weights is None:
+        window_weights = _composition15().window_weights(set_name)
+    reading_weights = composition.READING_WEIGHTS if reading_weights is None else reading_weights
+    ka, kb = {_key(c): c for c in a}, {_key(c): c for c in b}
+    common = sorted(k for k in set(ka) & set(kb) if games is None or k[0] in games)
+    diffs: dict[tuple, dict[str, list[float]]] = {}
+    for k in common:
+        wa, wb = ka[k].get("windows"), kb[k].get("windows")
+        if not wa or not wb:
+            continue
+        for i, (x, y) in enumerate(zip(wa, wb, strict=True)):
+            if x is not None and y is not None:
+                diffs.setdefault((k[0], i), {}).setdefault(k[2], []).append(x - y)
+    out = {}
+    for key, by_reading in diffs.items():
+        means = {r: float(np.mean(v)) for r, v in by_reading.items()}
+        rw = {r: reading_weights.get(r, 1.0) for r in means}
+        value = sum(rw[r] * means[r] for r in means) / sum(rw.values())
+        weight = window_weights.get(key, 1.0 if not window_weights else 0.0)
+        out[key] = (value, weight, means)
+    return out
+
+
+def weighted(a: list[dict], b: list[dict], set_name: str, games=None, **kw) -> dict:
+    """Composition- and reading-weighted paired difference a - b over a set's 10-minute windows."""
+    from possession import composition
+
+    table = window_table(a, b, set_name, games, **kw)
+    keys = sorted(table)
+    values = np.array([table[k][0] for k in keys])
+    weights = np.array([table[k][1] for k in keys])
+    readings = sorted({r for k in keys for r in table[k][2]})
+    by_reading = {}
+    for r in readings:
+        rows = [(table[k][2][r], table[k][1]) for k in keys if r in table[k][2]]
+        by_reading[r] = composition.weighted_mean([v for v, _ in rows], [w for _, w in rows])
+    return {
+        "mean": composition.weighted_mean(values, weights),
+        "interval": composition.weighted_bootstrap(values, weights, draws=N_BOOT),
+        "by_reading": by_reading,
+        "values": values,
+        "weights": weights,
+        "keys": keys,
+    }
+
+
+# -- rule D: a change to version 4, judged on the match's composition (tasks/15-...) -----------
+
+D_EVIDENCE = ("label_free", "match_like", "metrica:match_regime")
+D_STILL = "metrica:match_regime_still"  # joins the evidence once every member has it
+D_FLOORS = {"pff": -0.005, "idsse": -0.010, "idsse_auto": -0.010}
+D_READING_FLOOR = -0.010
+D_MIN_GAIN, D_SE = 0.005, 0.003
+
+
+def decide_d(names: list[str], reference: str) -> None:
+    from possession import composition
+
+    members = [n for n in names if n != reference]
+    evidence = list(D_EVIDENCE)
+    if all(has(n, D_STILL) for n in [*members, reference]):
+        evidence.append(D_STILL)
+    games = sorted({c["game"] for c in load(reference, evidence[0])})
+    tables = {
+        (n, s): window_table(load(n, s), load(reference, s), s) for n in members for s in evidence
+    }
+
+    def score(name, chosen):
+        values, weights = [], []
+        for s in evidence:
+            for key, (v, w, _) in tables[(name, s)].items():
+                if key[0] in chosen:
+                    values.append(v)
+                    weights.append(w)
+        return composition.weighted_mean(values, weights)
+
+    picks, blocks, cells = {}, {}, {}
+    for g in games:
+        pick = max(members, key=lambda m: score(m, [x for x in games if x != g]))
+        picks[g] = pick
+        for s in evidence:
+            for key, (v, w, by_reading) in tables[(pick, s)].items():
+                if key[0] != g:
+                    continue
+                blocks.setdefault(key, ([], w))[0].append(v)
+                for r, d in by_reading.items():
+                    cells.setdefault((s, r), []).append((d, w))
+    keys = sorted(blocks)
+    values = np.array([np.mean(blocks[k][0]) for k in keys])
+    weights = np.array([blocks[k][1] for k in keys])
+    gain = composition.weighted_mean(values, weights)
+    low, _ = composition.weighted_bootstrap(values, weights, draws=N_BOOT)
+    by = {
+        f"{s}/{r}": composition.weighted_mean([d for d, _ in rows], [w for _, w in rows])
+        for (s, r), rows in sorted(cells.items())
+    }
+    threshold = max(D_MIN_GAIN, D_SE * np.sqrt(2 * np.log(max(len(members), 1))))
+    print("evidence:", evidence, "| reference:", reference, "| members:", len(members))
+    print("held-out picks:", picks)
+    print(
+        "held-out weighted difference by (set, reading):", {k: round(v, 4) for k, v in by.items()}
+    )
+    print(
+        f"held-out weighted gain {gain:+.4f} (threshold {threshold:+.4f}); 5% bound {low:+.4f}; "
+        f"weight on uncovered windows 0, match coverage reported by composition15.py report"
+    )
+    ok = gain >= threshold and low > 0 and all(v >= D_READING_FLOOR for v in by.values())
+    final = max(members, key=lambda m: score(m, games))
+    print(f"evidence passes: {ok}; member chosen on all three matches: {final}")
+    for set_name, floor in D_FLOORS.items():
+        if not (has(final, set_name) and has(reference, set_name)):
+            print(f"{set_name}: not measured -> FAIL")
+            ok = False
+            continue
+        w = weighted(load(final, set_name), load(reference, set_name), set_name)
+        passes = w["mean"] >= floor
+        ok = ok and passes
+        print(
+            f"{set_name}: weighted {w['mean']:+.4f} (floor {floor:+.3f}) -> "
+            + ("pass" if passes else "FAIL")
+        )
+    fp = footprint_of(config_of(final))
+    inside = all(lo <= fp[k] <= hi for k, (lo, hi) in FOOTPRINT.items())
+    print("footprint:", {k: fp[k] for k in FOOTPRINT}, "->", "inside" if inside else "OUTSIDE")
+    ok = ok and inside
+    print("VERDICT (rule D):", f"change to {final}" if ok else f"{reference} stays")
 
 
 # -- rule A: the team's rule (docs/FUSION.md section 10) ---------------------------------------
@@ -322,23 +489,29 @@ def footprints(configs: list[str]) -> None:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=["measure", "compare", "decide", "decide-b", "footprint"])
+    parser.add_argument(
+        "action", choices=["measure", "compare", "decide", "decide-b", "decide-d", "footprint"]
+    )
     parser.add_argument("items", nargs="+")
     parser.add_argument("--sets", default=",".join(BASE_SETS))
     parser.add_argument("--jobs", type=int, default=3)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--against", default="V1")
     parser.add_argument("--evidence", default="label_free,match_like")
+    parser.add_argument("--weighted", action="store_true", help="compare: add the weighted line")
+    parser.add_argument("--reference", default="c14_best", help="decide-d: the version to change")
     args = parser.parse_args()
     sets = [s for s in args.sets.split(",") if s]
     if args.action == "measure":
         measure(args.items, sets, args.jobs, args.force)
     elif args.action == "compare":
-        compare(args.items, sets, args.against)
+        compare(args.items, sets, args.against, args.weighted)
     elif args.action == "decide":
         decide_a(args.items)
     elif args.action == "decide-b":
         decide_b(args.items, [s for s in args.evidence.split(",") if s])
+    elif args.action == "decide-d":
+        decide_d(args.items, args.reference)
     else:
         footprints(args.items)
 
