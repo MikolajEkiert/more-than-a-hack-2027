@@ -1,0 +1,22 @@
+# Task 17, step B: version 4 (c14_best) with its team model (LightGBM, features "v1+team") trained
+# on the seven IDSSE matches plus the 48 PFF training matches and the 20 SkillCorner open matches
+# (supervised.TEAM_DATA "idsse+pff+sc"). Everything else is version 4.
+name = "t17_pff48_sc"
+
+[ball_state]
+method = "blend"
+sources = ["sequence", "kickoff_wait"]
+
+[team]
+method = "blend"
+sources = [{ method = "supervised", features = "v1+team", data = "idsse+pff+sc" }]
+
+[decode]
+method = "switch_cost"
+turnover_cost = 5.0
+stop_cost = 16.0
+restart_cost = 12.0
+snap_start_s = 3.0
+snap_end_s = 3.0
+line_snap_s = 6.0
+line_margin_m = 0.5

@@ -269,3 +269,85 @@ def test_committed_team_model_is_listed_and_unpacks(tmp_path):
     written = supervised.seed_team_models(cache_dir=tmp_path)
     assert sorted(written) == sorted(p.name[: -len(".gz")] for p in packed)
     assert all((tmp_path / "models" / name).is_file() for name in written)
+
+
+# -- task 17: extra training matches of other providers --------------------------------------
+
+
+def _labelled(seed: int, n: int = 1500) -> dict:
+    """A synthetic container with a partly missing ball and three long spells, H, D, A."""
+    m = supervised.container(make_match(n=n, seed=seed, ungraded_head=0))
+    third = n // 3
+    m["label"] = np.repeat(np.array([0, 2, 1], np.int8), [third, third, n - 2 * third])
+    m["name"] = f"EXTRA-{seed}"
+    return m
+
+
+def _package_setup(monkeypatch):
+    """`supervised._setup` without the competition match: fixed degradation parameters."""
+    from solution import features as package_features
+
+    feature_fn = package_features.FEATURE_SETS["v1"]
+    params = {"ball_missing": 0.4}
+    monkeypatch.setattr(supervised, "_setup", lambda: (params, feature_fn, {"weights": True}))
+    return params, feature_fn
+
+
+def test_extra_rows_are_the_packages_extra_rows_with_the_block_appended(monkeypatch):
+    """`_extra_match_rows` (one match at a time) gives what the package's `prepare` + `stack` /
+    `stack_weights` make of the same list of extra matches, as `train_final` adds them."""
+    from solution import cache as package_cache
+    from solution import evaluate_external as ev
+    from solution import labels as package_labels
+
+    monkeypatch.setattr(package_cache, "ENABLED", False)
+    monkeypatch.setenv("MTAH_NO_CACHE", "1")
+    monkeypatch.setenv("POSSESSION_NO_FEATURE_CACHE", "1")
+    params, feature_fn = _package_setup(monkeypatch)
+    cfg = dict(ev.DEFAULT_CFG, weights=True)
+    raws = [_labelled(seed) for seed in (1, 2)]
+    prepared = ev.prepare(
+        raws, feature_fn, package_labels.raw, seed=0, degrade_params=params,
+        log=lambda text: None, swap=False,
+    )  # fmt: skip
+    x_ref, y_ref = ev.stack(prepared, stride=supervised.EXTRA_STRIDE)
+    w_ref = ev.stack_weights(prepared, stride=supervised.EXTRA_STRIDE, cfg=cfg)
+    parts = [
+        supervised._extra_match_rows(raw, i, package_labels.raw, cfg) for i, raw in enumerate(raws)
+    ]
+    x = np.concatenate([p[0] for p in parts])
+    n_package = x_ref.shape[1]
+    np.testing.assert_array_equal(x[:, :n_package], x_ref)
+    np.testing.assert_array_equal(np.concatenate([p[1] for p in parts]), y_ref)
+    np.testing.assert_array_equal(np.concatenate([p[2] for p in parts]), w_ref)
+    stride = supervised.EXTRA_STRIDE
+    blocks = [
+        supervised.team_block(d["m"])[np.flatnonzero(d["m"]["label"] != 3)[::stride]]
+        for d in prepared
+    ]
+    np.testing.assert_array_equal(x[:, n_package:], np.concatenate(blocks))
+
+
+def test_training_data_options_of_the_team_models():
+    supervised._check_team("v1+team", data="idsse+pff")
+    with pytest.raises(ValueError):
+        supervised._check_team("v1+team", data="idsse+metrica")  # Metrica is never trained on
+    assert supervised.TEAM_DATA["idsse"] == ()  # version 4's model: no extra matches
+
+
+def test_version_4_keeps_its_model_key(monkeypatch):
+    """The key of version 4's team model does not depend on the new option; another option
+    gets its own key."""
+    _package_setup(monkeypatch)
+    seen = []
+    monkeypatch.setattr(supervised, "_cached_booster", lambda path, fit: seen.append(path.name))
+    monkeypatch.setattr(supervised, "seed_team_models", lambda: [])
+    monkeypatch.setattr(supervised, "_extra_key", lambda data: ("extra", data))
+    supervised._train_final_team.cache_clear()
+    try:
+        supervised._train_final_team("raw", "v1+team")
+        supervised._train_final_team("raw", "v1+team", "idsse")
+        supervised._train_final_team("raw", "v1+team", "idsse+pff")
+    finally:
+        supervised._train_final_team.cache_clear()
+    assert seen[0] == seen[1] != seen[2]
