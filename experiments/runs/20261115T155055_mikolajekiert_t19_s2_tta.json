@@ -1,0 +1,69 @@
+{
+  "author": "MikolajEkiert",
+  "config": {
+    "ball_state": {
+      "method": "blend",
+      "sources": [
+        {
+          "method": "sequence_ensemble",
+          "seeds": [
+            0,
+            1
+          ],
+          "tta": true
+        },
+        "kickoff_wait"
+      ]
+    },
+    "decode": {
+      "line_margin_m": 0.5,
+      "line_snap_s": 6.0,
+      "method": "switch_cost",
+      "restart_cost": 12.0,
+      "snap_end_s": 3.0,
+      "snap_start_s": 3.0,
+      "stop_cost": 16.0,
+      "turnover_cost": 5.0
+    },
+    "game": null,
+    "name": "t19_s2_tta",
+    "team": {
+      "method": "blend",
+      "sources": [
+        {
+          "features": "v1+team",
+          "method": "supervised"
+        }
+      ]
+    }
+  },
+  "config_path": "configs/t19_s2_tta.toml",
+  "csv_sha256": "62aa81009e3d6d11191de5a116f00a585ce920bb7a4fd7474aaa7ef38b04dff6",
+  "diagnostics": {
+    "fps": 25,
+    "home_share": 0.6033,
+    "label_share_graded": {
+      "A": 0.2069,
+      "D": 0.4786,
+      "H": 0.3145,
+      "X": 0.0
+    },
+    "mean_possession_s": 12.41,
+    "n_frames": 199319,
+    "n_possessions": 267
+  },
+  "git_branch": "task/19-ball-state-seeds",
+  "git_commit": "6abe497",
+  "git_dirty": true,
+  "name": "t19_s2_tta",
+  "note": "task 19: version 4 with the ball-state network averaged over training seeds 0 and 1 and the home/away-swapped view; the member rule D chooses on all three Metrica matches; rejected (held-out gain +0.0011, threshold +0.0057)",
+  "public_sanity": {
+    "macroF1": 0.8872,
+    "n_gt_possessions": 17,
+    "n_pred_possessions": 14,
+    "note": "public 5 min, 17 possessions: sanity only, never for choosing between versions",
+    "spellF1": 0.7355
+  },
+  "seconds": 21.0,
+  "time_utc": "2026-11-15T15:50:55Z"
+}

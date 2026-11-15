@@ -17,7 +17,8 @@
     possession export [--profile P]        write the validation conditions' tracking to .npz
     possession train-sequence [--folds] [--final]
                                            train the temporal network (needs torch:
-                                           uv run --with torch==2.15.0 possession train-sequence)
+                                           uv run --with torch==2.15.0 possession train-sequence);
+                                           --seed N: a further training seed (task 19)
     possession submit configs/x.toml --team NAME
                                            final file: run twice, require identical bytes,
                                            validate with the official script, write submission/
@@ -363,6 +364,16 @@ def cmd_train_sequence(args) -> int:
 
     if not (args.folds or args.final):
         raise SystemExit("train-sequence needs --folds and/or --final")
+    if args.seed:  # task 19: further training seeds, one after another
+        from possession import sequence_seeds
+
+        for seed in args.seed:
+            if args.folds:
+                sequence_seeds.train_folds(seed)
+                sequence_seeds.swap_folds(seed)
+            if args.final:
+                print(f"wrote {_rel(sequence_seeds.train_final(seed))}")
+        return 0
     if args.folds:
         sequence_train.folds()
     if args.final:
@@ -576,6 +587,9 @@ def main(argv=None) -> int:
     p = sub.add_parser("train-sequence", help="train the temporal network (needs torch)")
     p.add_argument("--folds", action="store_true", help="out-of-fold IDSSE predictions")
     p.add_argument("--final", action="store_true", help="the network on all seven matches")
+    p.add_argument(
+        "--seed", type=int, action="append", default=[], help="a further training seed (task 19)"
+    )
     p.set_defaults(fn=cmd_train_sequence)
 
     p = sub.add_parser("export", help="write the validation conditions' tracking to .npz")

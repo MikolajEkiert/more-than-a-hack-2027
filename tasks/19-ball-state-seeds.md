@@ -1,5 +1,5 @@
 ---
-status: doing
+status: review
 owner: MikolajEkiert (Claude)
 stage: ball_state
 ---
@@ -58,13 +58,46 @@ Reported, not deciding: the chosen member against version 5 (`d15_s28_l6_t6`) wi
 of the plumbing, not a member).
 
 ## Acceptance criteria
-- [ ] `sequence_seeds.py` + `sequence_ensemble`, focused tests, `make check` green
-- [ ] seed 0's key is the committed network's; V4 byte-identical; seeds 1 and 2 trained (folds + final)
-- [ ] the family measured on the 7 sets; rule applied; verdict logged
-- [ ] runs logged for the chosen member; docs/DECISIONS.md lines (with credit)
-- [ ] networks committed only for a candidate, with the exact retrain command
+- [x] `sequence_seeds.py` + `sequence_ensemble`, focused tests, `make check` green
+- [x] seed 0's key is the committed network's; V4 byte-identical; seeds 1 and 2 trained (folds + final)
+- [x] the family measured on the 7 sets; rule applied; verdict logged
+- [x] runs logged for the chosen member; docs/DECISIONS.md lines (with credit)
+- [x] networks committed only for a candidate (none is), with the exact retrain command
 
 ## Log
 - 2026-11-15 · Claude · Task opened, decision rule written before measuring. Seed 0's key
   (`sequence_seeds.run_key(0)`) is a2d3076d6d2c4fd1, the committed network's; seeds 1 and 2 get
   504c3a8b8473a074 and 9eb7d308605d6ec7. Training of seeds 1 and 2 started (one slot, sequential).
+- 2026-11-15 · Claude · Swapped view without training: `sequence_seeds.swap_folds(0)` runs each
+  seed-0 fold network on the swapped features of its held-out IDSSE copy (after checking that it
+  reproduces the stored fold prediction bit for bit); PFF and Metrica use the package's swapped
+  feature cache, as the LightGBM's `tta`. Training of seeds 1 and 2 (folds, swapped folds, final),
+  one slot, 12:25 to 15:15: about 85 minutes per seed. `t19_s1` (seeds [0], no view) reproduces
+  version 4's cells exactly on label_free and PFF.
+- 2026-11-15 · Claude · Differences against version 4 (unweighted mean [5%, 95%] block bootstrap,
+  matches won; weighted by `truth:c14_best` in the DECISIONS line where it matters):
+
+  | set | s1_tta | s2 | s2_tta | s3 | s3_tta |
+  |---|---|---|---|---|---|
+  | label_free | +0.0033 [+0.001, +0.008] 2/3 | +0.0020 [-0.002, +0.007] 2/3 | +0.0054 [+0.002, +0.011] 3/3 | +0.0030 [-0.002, +0.008] 2/3 | +0.0049 [+0.001, +0.010] 3/3 |
+  | match_like | +0.0015 [-0.002, +0.004] 3/3 | -0.0034 [-0.008, +0.001] 1/3 | -0.0003 [-0.004, +0.003] 2/3 | -0.0013 [-0.005, +0.002] 2/3 | +0.0005 [-0.003, +0.004] 2/3 |
+  | match_regime | +0.0014 [-0.001, +0.003] 2/3 | +0.0018 [-0.000, +0.004] 3/3 | +0.0021 [-0.000, +0.005] 2/3 | +0.0021 [+0.000, +0.005] 3/3 | +0.0037 [+0.002, +0.006] 3/3 |
+  | match_regime_still | +0.0018 [-0.001, +0.005] 3/3 | +0.0001 [-0.004, +0.004] 2/3 | +0.0007 [-0.003, +0.004] 3/3 | -0.0016 [-0.005, +0.002] 0/3 | -0.0014 [-0.005, +0.002] 1/3 |
+  | IDSSE | +0.0022 [-0.000, +0.004] 6/7 | -0.0001 [-0.002, +0.002] 4/7 | +0.0019 [-0.001, +0.004] 4/7 | +0.0023 [-0.001, +0.005] 4/7 | +0.0034 [+0.001, +0.006] 5/7 |
+  | IDSSE auto | +0.0016 [+0.000, +0.005] 6/7 | +0.0015 [-0.000, +0.004] 6/7 | +0.0026 [+0.001, +0.006] 7/7 | +0.0021 [+0.001, +0.005] 5/7 | +0.0042 [+0.003, +0.008] 6/7 |
+  | PFF | +0.0033 [+0.001, +0.006] 11/16 | +0.0009 [-0.002, +0.003] 9/16 | +0.0025 [-0.001, +0.005] 12/16 | -0.0002 [-0.003, +0.003] 6/16 | +0.0003 [-0.004, +0.003] 10/16 |
+
+- 2026-11-15 · Claude · Rule D (`decide-d ... --bins truth:c14_best`): held-out picks t19_s2_tta,
+  t19_s1_tta, t19_s2_tta; held-out weighted gain +0.0011 (threshold +0.0057 with K = 6; the script
+  prints +0.0054), 5% bound -0.0010; every (profile, reading) above -0.010; floors pass (PFF
+  +0.0034, IDSSE +0.0025, auto +0.0042); footprint inside (4.84 per live minute, dead 0.479). With
+  unit weights: gain +0.0016, bound -0.0003, chosen t19_s1_tta. **Verdict: version 4 stays.** The
+  swapped view is a small, consistent gain (positive on all 7 sets alone), far below the threshold;
+  extra seeds add nothing reliable. Against version 5 (`d15_s28_l6_t6`), reported only: t19_s2_tta
+  -0.004 to -0.013 on Metrica and IDSSE, +0.007 on PFF (13 of 16), the same pattern as version 4.
+- 2026-11-15 · Claude · Run logged for the member chosen on all three matches:
+  experiments/runs/20261115T155055_mikolajekiert_t19_s2_tta.json (267 possessions; footprint inside).
+  The seed-1 final network retrained from scratch into a scratch folder is byte-identical to the
+  first training (same sha256; numpy against torch 7e-15). Networks of seeds 1 and 2 are not
+  committed (no candidate); rebuild: `uv run --with torch==2.15.0 possession train-sequence --seed 1
+  --seed 2 --folds --final` (writes models/sequence_seeds/ and the out-of-fold files).

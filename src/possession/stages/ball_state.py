@@ -199,3 +199,19 @@ def blend_by_ball(
     unseen = fusion.blend(match, "ball_state", sources, weights_unseen)
     out = np.where(match.ball_seen, seen, unseen)
     return np.where(np.isnan(out), 0.5, out).astype(np.float32)
+
+
+@register("ball_state", "sequence_ensemble")
+def sequence_ensemble(match: Match, seeds: list = (0, 1, 2), tta: bool = False) -> np.ndarray:
+    """P(play is live) from the temporal network averaged over training seeds and/or views.
+
+    The mean stoppage log-odds of the networks of `sequence` trained with each training seed in
+    `seeds` (seed 0 is the committed network; the others are in models/sequence_seeds/, task 19,
+    possession/sequence_seeds.py). With `tta` each network's prediction of the match with home and
+    away exchanged is averaged in too. `seeds = [0]` without `tta` is exactly `sequence`.
+    Training matches are scored out of fold, as for `sequence`. Nothing is trained here.
+    """
+    from possession import sequence_seeds
+
+    z = sequence_seeds.z_dead(match, tuple(int(s) for s in seeds), bool(tta))
+    return 1.0 / (1.0 + np.exp(z))
