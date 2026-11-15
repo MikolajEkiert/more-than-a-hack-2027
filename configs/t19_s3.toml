@@ -1,3 +1,5 @@
+# Needs the seed networks in models/sequence_seeds/, which are not committed (no t19 config is
+# submitted). Rebuild: uv run --with torch==2.15.0 possession train-sequence --seed 1 --seed 2 --folds --final
 # Task 19: version 4 with the temporal network averaged over training seeds [0, 1, 2], without the
 # home/away-swapped view.
 name = "t19_s3"
