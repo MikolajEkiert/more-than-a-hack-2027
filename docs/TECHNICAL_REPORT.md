@@ -96,14 +96,20 @@ restarts after a stoppage (it does in 47% of cases); the package's boundary dete
 decoder; adding our label-free evidence to the model's; training on 48 PFF matches as well or on
 those alone; training the team-feature model on 48 PFF and/or 20 SkillCorner open matches (MIT) as
 well, an idea of other teams (their labels change hands later, the model reads possession more
-slowly and loses on every Metrica profile; task 17); training labels with short interruptions merged and a slower decoder (a bet on how the
-ground truth reads "possession"); a decoder that picks the possessions with the largest expected
+slowly and loses on every Metrica profile; task 17); training labels with short interruptions
+merged and a slower decoder (a bet on how the ground truth reads "possession"); a minimum
+stoppage length in the decoder, an idea of other teams (it helps only under the still-ball stress
+profile; task 16); averaging two or three seeds of the temporal network, with or without the
+home/away-swapped view, an idea of other teams (+0.001, below the noise; task 19); a decoder that picks the possessions with the largest expected
 `spellF1` under the model's posterior (it never beat the most likely path: the posterior is not
 calibrated enough); the temporal network's team head (its 5 Hz output blurs the moment of a change);
 weighting the two ball-state models by whether the ball is tracked; moving restarts onto the
 ball's re-entry; relabelling short possessions sandwiched by the other team (gains under one
 reading of "possession", loses under the other, and on every PFF match); down-weighting evidence
-inside ball gaps; shifting possession changes in time; training the team model on labels debounced 1.5 or 2.5 s, or with extra weight on the frames around a hand-over (task 18: the debounce gains under `controlled` and loses under `touch` and on PFF, the weights lose everywhere); averaging the team model over the home/away-swapped view (neutral).
+inside ball gaps; shifting possession changes in time; training the team model on labels
+debounced 1.5 or 2.5 s, or with extra weight on the frames around a hand-over, ideas of other teams
+(task 18: the debounce gains under `controlled` and loses under `touch` and on PFF, the weights
+lose everywhere); averaging the team model over the home/away-swapped view (neutral).
 
 ## 3. Training and validation data
 No label of the provided match was used for training or for choosing anything, and we labelled
@@ -232,6 +238,28 @@ the only one of the two that also passes the team's earlier rule A: plain IDSSE 
 version 1. It is a bet on the `controlled` reading (+0.012 to +0.020 under it, -0.010 to +0.005
 under `touch`).
 
+**Ideas of other teams, tested against version 4 afterwards** (tasks 16-19, 2026-11-15; docs/FUSION.md
+sections 14-16). Each family was measured under the same rule, written before measuring, and each
+idea is credited to the teams it came from in docs/DECISIONS.md. None was adopted:
+
+| Idea (task) | Best member, held out | Why it stays out |
+|---|---|---|
+| Minimum stoppage length in the decoder (16) | +0.015, with a change price of 6 | PFF -0.008 against a floor of -0.005; on version 4's decoder alone +0.005, all from the still-ball stress profile |
+| Team model also trained on 48 PFF and/or 20 SkillCorner matches (17) | -0.008 | Loses on every Metrica profile, mostly under `touch` |
+| Team training for `spellF1`: labels debounced, hand-overs weighted, swapped view (18) | +0.016 | `touch` readings down to -0.041 and PFF -0.087 |
+| Two or three seeds of the temporal network, swapped view (19) | +0.001 | Below the threshold (+0.005); safe on every floor |
+
+Every gain that survives the held-out choice comes from reading possession as changing hands more
+slowly, and PFF, the only set with real noise, refuses each of them. All options stay in the code,
+off by default; version 4's file is unchanged.
+
+**Beside two other teams, on the same conditions** (`scripts/compare_teams.py`; their predictions
+come from their public repositories, and the truths are checked to be identical to ours). Both teams
+trained on Metrica and IDSSE, so PFF is the only set none of the three of us trained on. There,
+version 4 scores 0.820 against 0.743 (Barca-Hackathon) and 0.767 (Team Sigue), and is higher on
+all 16 matches against each. On Metrica, which is their training data, they score 0.65-0.75
+against our 0.59-0.71.
+
 **Where the rest is.** Replacing one input by the truth on the Metrica matches (version 1, the
 harsher published profile): perfect stoppages gave +0.07, a perfect team on frames without a ball
 +0.08, a perfect team on frames with a ball +0.23. Version 4 attacks the first and the last;
@@ -266,7 +294,7 @@ match hard (section 6) is simulated by none of the sets.
 - **The team features help where the ball is off its possessor.** They gain on all three Metrica
   profiles and change nothing on IDSSE and PFF, whose ball is precise or whose team is easy to read.
   How much of the match's difficulty is of that kind is not known.
-- **Few validation matches of our provider** (three), used for many comparisons (more than 130
+- **Few validation matches of our provider** (three), used for many comparisons (more than 160
   configurations): the choice on two matches and scoring on the third corrects for the selection
   within a family, not across families. That is why the other sets are kept beside them.
 - **Both models are trained on seven matches** of another league and another tracking system.
