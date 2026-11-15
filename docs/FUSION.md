@@ -394,3 +394,199 @@ and M6 exist only if task 13 passes its numerical check (G4).
 
 **Mechanism check, not a decision (G3).** M3 should cut the stoppages it invents with the ball
 tracked on PFF; if it does not, only bugs are fixed, nothing is tuned.
+
+## 11. Is the verification matched to the match? (task 14, 2026-11-15)
+
+**One vector, every set, read the same way.** `scripts/regime_compare.py` computes the same
+aggregates (`inspect_data.regime_vector`) on the competition match and on every condition of every
+validation set, split by version 1's labels (the only labels the match has, so the comparison is
+like for like), plus the agreement of version 1 with `unsup_v2` (`validation.agreement`). On the
+labelled sets the same split by the truth (in brackets) shows how far version 1's labels distort
+the picture: little for the ball lost in play, much for where inside stoppages the ball is seen.
+
+| statistic (version 1's labels) | match | `label_free` | `match_like` | IDSSE plain | `idsse_auto` | PFF |
+|---|---|---|---|---|---|---|
+| P(ball missing \| play) | 0.077 | 0.152 (0.155) | 0.222 (0.255) | 0.403 (0.406) | 0.237 (0.252) | 0.048 (0.063) |
+| P(ball missing \| stoppage) | 0.746 | 0.909 (0.963) | 0.971 (0.873) | 0.418 (0.416) | 0.897 (0.895) | 0.932 (0.992) |
+| ball in view in the first / middle / last third of stoppages | 0.28 / 0.20 / 0.29 | 0.11 / 0.08 / 0.08 | 0.05 / 0.02 / 0.02 | 0.59 / 0.58 / 0.58 | 0.23 / 0.06 / 0.02 | 0.08 / 0.04 / 0.09 |
+| stoppages with the ball lying still in the 3 s before the restart | 0.35 | 0.07 | 0.00 | 0.56 | 0.05 | 0.12 |
+| runs of a still ball (0.5 s or more) per 10 min | 15.5 | 9.0 | 0.0 | 4.5 | 0.8 | 19.5 |
+| median speed of the ball reappearing after a long gap (m/s) | 12.0 | 6.7 | 8.4 | 2.7 | 7.7 | 9.8 |
+| median distance from a tracked ball to the nearest player (m) | 1.91 | 1.41 | 2.79 | 2.83 | 1.70 | 0.55 |
+| median stretch of play without a ball, 1 s or more (s) | 6.0 | 5.8 | 5.8 | 12.2 | 6.3 | 3.1 |
+| stoppages per 10 min; dead share | 12.8; 0.49 | 10.1; 0.40 | 10.0; 0.35 | 10.0; 0.45 | 9.8; 0.46 | 11.0; 0.46 |
+| agreement of our two pipelines: possessions / team / team margin | 0.456 / 0.829 / 0.678 | 0.626 / 0.887 / 0.737 | 0.457 / 0.798 / 0.676 | 0.467 / 0.786 / 0.745 | 0.553 / 0.862 / 0.777 | 0.685 / 0.935 / 0.823 |
+
+Mean relative distance to the match per aspect (0 = the same; `regime_compare.py table`):
+
+| aspect | `label_free` | `match_like` | IDSSE plain | `idsse_auto` | PFF |
+|---|---|---|---|---|---|
+| ball lost in play | 0.33 | 0.36 | **0.69** | 0.47 | 0.28 |
+| ball lost in stoppages | 0.48 | 0.63 | 0.36 | 0.46 | 0.49 |
+| ball in view in stoppages | 0.39 | 0.48 | 0.45 | 0.51 | 0.42 |
+| tracked ball (tracking only) | 0.31 | 0.51 | 0.49 | 0.31 | 0.24 |
+| ball near a player | 0.18 | 0.26 | 0.21 | 0.08 | 0.49 |
+| hardness (agreement, no labels) | 0.14 | 0.01 | 0.06 | 0.11 | 0.21 |
+| overall (ten aspects) | 0.26 | 0.30 | 0.32 | 0.28 | 0.30 |
+
+What it says. No set resembles the match on everything. The match loses the ball on 8% of play
+and 75% of stoppage time; it keeps the ball in view during a quarter of its stoppage time, spread
+over the whole stoppage, and in a third of its stoppages the ball lies still before the restart
+(placed). Every degradation profile so far showed the ball only at a stoppage's start (rolling
+on), and the 2.0 m offset of `match_like` never lets it lie still. `match_like` reproduces how hard
+the match is (by construction) but not why: it loses the ball on 22-26% of play instead of 8% and
+puts it 2.8 m from the nearest player instead of 1.9 m. PFF is the closest set for the ball lost in
+play; plain IDSSE the farthest (41% lost at random). What no degradation can change: the match has
+more stoppages (12.8 per 10 minutes against about 10) and more dead time (0.49 by version 1).
+
+**The profile `match_regime`.** `validation.degrade` gained optional mechanisms (off by default,
+on a second random stream, so the three existing profiles give byte-identical degraded matches):
+before a share of the restarts the ball is carried in view to the restart spot and lies there;
+after the others it is picked up late; and the share of the live ball loss placed before
+stoppages can be set. `scripts/regime_compare.py fit` searched two grids (24 settings for the ball
+in stoppages, then 32 for the loss in play and the ball offset; 3 matches, seed 0, version 1 and
+`unsup_v2` run on each) for the degradation whose statistics, read through version 1's labels, are
+closest to the match's: five groups of statistics, the agreement of our two pipelines counted
+twice. Best (loss 0.157): the ball lost on 5% of live frames in stretches of 4-9 s, half of it
+just before stoppages; rolling on after 25% of stoppages for 0.5-2 s; before 35% of the restarts
+carried in view for 2-10 s and placed for 1-4 s (0.05 m tracker noise); after the others picked up
+0-1 s late; offset 1.0 m.
+
+| statistic (version 1's labels) | match | `match_regime` |
+|---|---|---|
+| P(ball missing \| play) / P(ball missing \| stoppage) | 0.077 / 0.746 | 0.068 / 0.797 |
+| ball in view in the first / middle / last third of stoppages | 0.28 / 0.20 / 0.29 | 0.13 / 0.17 / 0.31 |
+| stoppages with the ball lying still before the restart | 0.35 | 0.35 |
+| tracked stoppage frames with the ball still / outside the pitch | 0.35 / 0.15 | 0.37 / 0.20 |
+| median distance from a tracked ball to the nearest player in play (m) | 1.89 | 1.83 |
+| runs of a still ball per 10 min; reappearance speed (m/s) | 15.5; 12.0 | 7.1; 7.4 |
+| agreement: possessions / team / team margin | 0.456 / 0.829 / 0.678 | 0.564 / 0.864 / 0.735 |
+
+It matches the match's ball regime far better than any earlier profile and misses its hardness:
+our two pipelines agree on 0.56 of possessions under it against 0.46 on the match, close to
+`label_free` (0.63). The grid shows why: the offset reaches the match's agreement only at 2.5 m
+(0.46-0.47; 0.52-0.54 at 1.5 m, 0.50-0.52 at 2.0 m), where the ball is 2.9-3.0 m from the nearest
+player, against 1.9 m on the match (1.8 m at an offset of 1.0 m).
+Whatever makes the match hard (identity switches, a ball seen in the wrong place, the players'
+own tracking errors; none of them simulated) is not the ball's position noise. So `match_regime`
+is the evidence for how stoppages and a missing ball look, `match_like` for how hard the team
+evidence is; neither is both. The match also has twice as many short still-ball runs (15.5
+against 7.1 per 10 minutes; a quarter of its still frames fall in version 1's play) and its ball
+reappears faster (12 m/s against 7.4): spare balls or false detections lying still, and a later
+pick-up, may be what is missing.
+
+Mean relative distance to the match per aspect, `match_regime` added: ball lost in play 0.16, in
+stoppages 0.17, in view in stoppages 0.19, tracked ball 0.22, ball near a player 0.08, hardness
+0.10; overall 0.17 against 0.26 (`label_free`), 0.28 (`idsse_auto`), 0.30 (PFF, `match_like`) and
+0.32 (plain IDSSE). It is the closest set on six of ten aspects, not on hardness.
+
+**The reference versions under `match_regime`** (`grid14.py measure ... --sets
+metrica:match_regime`, 3 matches x 3 seeds, both readings; difference to version 1, 5-95% interval
+over (match, window) blocks):
+
+| member | spellF1 | difference | touch | controlled | matches won (per match) |
+|---|---|---|---|---|---|
+| V1 | 0.655 | | | | |
+| M3 (regime-mixed LightGBM) | 0.665 | +0.010 [+0.007, +0.012] | +0.009 | +0.010 | 3 of 3 (+0.008, +0.007, +0.014) |
+| M5 (temporal network blended 0.5/0.5) | 0.674 | +0.019 [+0.015, +0.023] | +0.018 | +0.020 | 3 of 3 (+0.016, +0.015, +0.027) |
+| M6 (temporal network for stoppages) | 0.675 | +0.021 [+0.016, +0.024] | +0.020 | +0.021 | 3 of 3 (+0.019, +0.013, +0.030) |
+
+Version 1 scores about what it scores under `label_free` (0.659), as the agreement statistics
+predicted. M6's gain sits between `label_free` (+0.025) and `match_like` (+0.018), not near PFF
+(+0.044): extrapolating the sets' trend in P(ball missing | play) to the match (about 0.08) would
+have promised about +0.04, but the ball in view during stoppages, which PFF never shows, takes
+part of the temporal network's advantage away. Rule A does not use this profile and its verdict
+stays (version 1). Rule B as written (`label_free`, `match_like`) and with `match_regime` added to
+its evidence both choose M6: held-out +0.021 (5% bound +0.015 and +0.016), PFF +0.044 (16 of 16),
+`idsse_auto` +0.026 (7 of 7), plain IDSSE -0.001 (3 of 7, above its floor of -0.010), footprint
+5.25 possessions per live minute and dead share 0.479. The IDSSE matches in the `match_regime`
+regime were not measured: every IDSSE condition needs out-of-fold predictions, which for a new
+input regime means retraining the fold models, and the machine had no room for it.
+
+**How much the protocol can see** (`scripts/protocol_check.py`, from the cells in `.cache/family`).
+
+- *Noise of a paired difference.* Pooled over M3-M6 and both evidence profiles: one degradation
+  seed of a match differs from the mean of its three seeds by 0.006 (SD); matches differ by a
+  further 0.005; the split between the two readings varies by 0.002 from match to match; a
+  bootstrap over (match, 10-minute window) blocks gives a standard error of 0.0035. A profile's
+  mean over 3 matches x 3 seeds has a standard error of about 0.004 (0.003 for the mean of both
+  profiles, which correlate 0.22). Plain IDSSE and `idsse_auto` matches spread by 0.005-0.008 around
+  a member's mean, PFF matches by 0.019.
+- *What rule A can accept.* Its +0.02 per profile is five standard errors: an effect-size
+  threshold, not a test against noise. Simulated with that noise (same true effect on every set),
+  rule A accepts a true +0.02 change 27% of the time, +0.03 99%, +0.01 never; rule B (+0.010 and a
+  5% bound above 0) accepts +0.01 half of the time and +0.02 always, and never a change of 0. If the
+  change has no effect on plain IDSSE, as for a ball-state change in the match's regime, rule A
+  with its vetoes accepts a true +0.03 change 22% of the time: the IDSSE veto is then a coin toss
+  on seven matches. M6's held-out +0.018 under `match_like` is 0.5 standard errors below the
+  threshold: a member with a true +0.02 there fails that condition half of the time.
+- *The set matters more than the noise.* A member's effect varies between sets by an SD of 0.012
+  (M3), 0.013 (M5), 0.016 (M6) and 0.015 (`bs_w37`), three to four times the standard error within
+  a set, and for M5, M6 and `bs_w37` it follows the set's P(ball missing | play) with a correlation
+  of -0.92 to -0.96 (PFF 0.06: +0.044 for M6; `label_free` 0.16: +0.025; `match_like` and
+  `idsse_auto` 0.25: +0.018 and +0.026; plain IDSSE 0.41: -0.001). Which set stands for the match is
+  the decision; the noise within a set is not what limits it.
+- *Rankings.* Within the ball-state family (V1, M3, M4, M5, M6, `bs_w37`) the order of the members
+  agrees between `label_free`, `match_like` and PFF (Kendall's tau 0.73-0.87) and not at all
+  between plain IDSSE and any other set (-0.20 to -0.07). With the team-stage members of task 14
+  included (large losses on every set) every pair of sets agrees (0.45-0.93).
+- *Selection.* The three Metrica matches have served at least about 90 documented configurations
+  before task 14 (docs/DECISIONS.md: decoder costs, touch-episode parameters, the version 3 family,
+  PFF training, M3-M6, ...) and 41 more in task 14 so far (`.cache/family`), always the same three
+  matches and the same seeds. The best of 41 members with no effect would show about +0.007 on the
+  mean of both profiles by chance (standard error 0.003): below rule A's threshold, two thirds of
+  rule B's. The choice on two matches and scoring on the third corrects this within a family, not
+  across the many families that were designed after seeing these matches.
+- *Vetoes for a ball-state change.* Plain IDSSE loses the ball on 41% of play at random (the
+  match: 8%), and its ranking of ball-state members is unrelated to every other set's: it is not a
+  representative veto for them. PFF loses the ball in play like the match (6%) but never shows it
+  during stoppages (the ball is in view in 4.5% of its stoppages, the match's in 79%) and its
+  players are estimated: a fair veto for "is a missing ball read right", silent on placed balls.
+- *The two readings.* Possessions per live minute are restarts plus changes of team in play. By
+  version 1's labels the match has 2.54 restarts per live minute (Metrica 1.65-1.68, PFF 1.65-2.02)
+  and 3.05 changes in play, the same as version 1 on `label_free` (3.15) and PFF (3.06; PFF's truth
+  3.18) and fewer than on `match_like` (3.72), which is as hard as the match. Metrica's truth has
+  2.41 changes in play under `controlled` and 4.22 under `touch`. The published 4.2 possessions per
+  live minute of the public window (17 possessions, so roughly +-1) leave, at the match's restart
+  rate, about 1.7 changes in play per live minute. Both numbers fit `controlled` (or a match with
+  few changes of possession) and are hard to square with `touch`; with CHALLENGE.md's wording they
+  argue for weighting `controlled` above 50%. This uses the public window's published metadata as
+  information about the definition only; a weighting has to be fixed before the measurement it
+  decides.
+
+**A proposal: rule C, a verification matched to the match** (`scripts/protocol_check.py rule-c`).
+It is not a rule of the team. It was written after the results of tasks 12-13 were known, so it
+cannot be blind to them; the owner decides whether it replaces rule A for anything measured later.
+
+1. *Evidence*: the three Metrica matches under `match_regime`, the profile fitted to the match's own
+   ball regime and hardness. Readings weighted 2/3 `controlled`, 1/3 `touch` (fixed before any
+   measurement it decides). A member of a family is chosen on two matches and scored on the third.
+2. *Accept on the evidence* if the held-out weighted gain is at least +0.010 (2.5-3 standard errors
+   of today's noise for one profile; the best of 40 candidates without any effect would show about
+   +0.008 by chance), the 5% bound of a paired bootstrap over (match, 10-minute window) blocks is
+   above 0, and no reading under `match_regime` loses more than 0.005.
+3. *Other sets by what the change acts on*, from the similarity table above (to be recomputed with
+   `regime_compare.py table` whenever a set changes):
+
+   | change | other evidence: no reading below -0.010 | veto: mean >= 0 and most matches won | reported; only a loss below -0.020 blocks |
+   |---|---|---|---|
+   | ball state (stoppages) | `label_free` | PFF (9 of 16) | `match_like`, plain IDSSE, `idsse_auto` |
+   | team stage | `match_like` | plain IDSSE (5 of 7) | `label_free`, `idsse_auto`, PFF |
+
+   PFF is the set closest to the match on the ball lost in play; plain IDSSE and `match_like` are
+   the closest on hardness. A set that does not resemble the match on what the change acts on can
+   only block a change by a loss large enough to point at a bug.
+4. *Footprint* as in rule A: 3.5 to 7 possessions per live minute, dead share 0.35 to 0.50.
+5. *Multiplicity*: every configuration measured on the Metrica matches stays in `.cache/family`
+   and is counted; the threshold of point 2 is max(+0.010, SE x sqrt(2 ln K)), with K the
+   configurations compared for the decision and SE the pooled standard error of the primary
+   evidence (0.004 today: +0.011 for K = 40, +0.013 for K = 150).
+
+Applied to the family of section 10 (M3, M5, M6; post hoc, see above): the held-out choice is M6 on
+every match; its held-out gain under `match_regime` is +0.021 (touch +0.020, controlled +0.021;
+5% bound +0.016), above the threshold of +0.010 (K = 3; +0.011 if the 45 configurations of tasks
+12-14 so far are counted, +0.013 for about 150); `label_free` +0.024 / +0.026; PFF +0.044, 16 of
+16; reported `match_like` +0.018, plain IDSSE -0.001, `idsse_auto` +0.026; footprint inside. Rule
+C would change version 1 to M6. Rule A keeps version 1, on two conditions this section questions:
++0.018 under `match_like` against a threshold five standard errors above zero, and the plain IDSSE
+veto, the set least like the match for a ball-state change.

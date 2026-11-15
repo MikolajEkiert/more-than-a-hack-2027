@@ -56,7 +56,7 @@ of tasks 12-13 (M6), so it cannot be blind to them.
 ## Acceptance criteria
 - [ ] every direction measured on all sets, numbers in the log below and in docs/DECISIONS.md
 - [ ] the decision under rule A and rule B for the best candidate
-- [ ] an assessment of the verification method itself
+- [x] an assessment of the verification method itself (docs/FUSION.md section 11)
 - [ ] `make check` green; the submitted file unchanged unless the owner decides otherwise
 
 ## Log
@@ -119,3 +119,24 @@ of tasks 12-13 (M6), so it cannot be blind to them.
   M6 live" cell (ball tracked 88%, running 0.42) looks like PFF's (84%, 0.26, 90% live). So the
   naive alarm was wrong; a label-free statistic of the match has to be calibrated on labelled
   sets in the very cells where versions disagree before it can arbitrate between them.
+- 2026-11-15 · Claude (verification) · `scripts/regime_compare.py`: the same vector of aggregates
+  (`inspect_data.regime_vector`) on the match and on every validation set, through version 1's
+  labels, plus the agreement of version 1 with `unsup_v2`; similarity table in docs/FUSION.md
+  section 11. No set resembles the match on everything; PFF is closest on the ball lost in play,
+  plain IDSSE farthest; the match shows the ball during a quarter of its stoppage time (placed
+  before the restart in a third of its stoppages), which no profile did.
+- 2026-11-15 · Claude (verification) · `validation.degrade`: optional mechanisms (placed and
+  carried ball before restarts, late pick-up after restarts, lead-in share), off by default, on
+  a second random stream; the existing profiles are byte-identical on all 27 real conditions.
+- 2026-11-15 · Claude (verification) · profile `match_regime` fitted (`regime_compare.py fit
+  --write`, 56 settings): the match's ball regime reproduced (P(missing | play) 0.068 against
+  0.077, P(missing | stoppage) 0.80 against 0.75, placed ball before 35% of restarts, ball 1.8 m
+  from the nearest player against 1.9 m), its hardness not (possession agreement 0.56 against
+  0.46). Under it: V1 0.655; M3 +0.010, M5 +0.019, M6 +0.021, each 3 of 3 matches. Rule B, as
+  written and with `match_regime` added, chooses M6; rule A keeps version 1.
+- 2026-11-15 · Claude (verification) · assessment of the protocol (`scripts/protocol_check.py`):
+  standard error of a profile's mean about 0.004; rule A's +0.02 is five of them (a true +0.02
+  passes 27% of the time); a member's effect varies between sets three to four times more than
+  that and follows the set's ball loss in play; plain IDSSE orders ball-state members unlike every
+  other set; about 130 configurations on the same three Metrica matches. Rule C proposed (docs/
+  FUSION.md section 11), post hoc: it would choose M6. The owner decides.

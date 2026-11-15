@@ -230,3 +230,52 @@ def test_regime_with_and_without_truth():
     assert full["ball_missing_given_dead"] == 0.0 and full["ball_missing_given_live"] == 0.0
     assert full["false_dead_tracked_moving_share"] is not None
     assert inspect_data.regime(m, truth, truth=truth)["false_dead_tracked_moving_share"] is None
+
+
+def _regime_case():
+    """3000 frames, one half: play, a stoppage of 8 s with the ball lost but placed (still) for
+    its last 2 s, play without a ball for 5 s running into a 4 s stoppage, play to the end."""
+    m = make_match(n=3000, ball_missing=0.0, ungraded_head=0)
+    labels = np.full(m.n_frames, "H", dtype="<U1")
+    labels[1000:1200] = "D"
+    labels[2000:2100] = "D"
+    m.ball[1000:1150] = np.nan
+    m.ball[1150:1200, :2] = m.ball[1200, :2]  # lying still at the restart spot
+    m.ball[1875:2100] = np.nan  # lost 5 s before the second stoppage, and during it
+    m.ball[2500:2510] = np.nan  # a dropout of 0.4 s
+    return m, labels
+
+
+def test_regime_vector_reads_ball_loss_and_placed_balls():
+    m, labels = _regime_case()
+    out = inspect_data.regime_vector(m, labels)
+    assert out["missing_given_dead"] == pytest.approx(250 / 300, abs=1e-4)
+    assert out["missing_given_live"] == pytest.approx(135 / 2700, abs=1e-4)
+    assert out["live_missing_lead_in"] == pytest.approx(125 / 2700, abs=1e-4)
+    assert out["live_missing_free"] == 0.0 and out["live_missing_lead_out"] == 0.0
+    assert out["live_dropouts_per_10min_live"] == pytest.approx(1 / (2700 / 25 / 60) * 10, 1e-3)
+    assert out["lead_in_s_p50"] == pytest.approx(5.0)
+    assert out["stoppage_end_tracked"] == 0.5 and out["stoppage_start_tracked"] == 0.0
+    assert out["stoppage_end_still"] == 0.5  # the placed ball, not the lost one
+    assert out["end_visible_s_p50"] == pytest.approx(2.0)
+    assert (
+        out["dead_tracked_first_third"] == 0.0 and out["dead_tracked_last_third"] == 0.5
+    )  # 50 of 67 + 33
+    assert out["dead_tracked_still"] > 0.9
+    assert out["stoppages_per_10min"] == pytest.approx(2 / (3000 / 25 / 60) * 10, 1e-3)
+    assert out["stoppage_s_p50"] == pytest.approx(6.0)  # 8 s and 4 s
+    assert out["dead_share"] == pytest.approx(0.1, abs=1e-4)
+    for name, value in out.items():  # shares stay shares; nothing is a per-frame array
+        assert value is None or np.isscalar(value), name
+
+
+def test_regime_vector_without_labels_is_the_tracking_part():
+    m, labels = _regime_case()
+    alone, both = inspect_data.regime_vector(m), inspect_data.regime_vector(m, labels)
+    assert set(alone) < set(both) and all(both[k] == v for k, v in alone.items())
+    assert alone["ball_missing"] == pytest.approx(385 / 3000, abs=1e-4)
+    assert alone["gaps_under_1s_per_10min"] == pytest.approx(1 / 2 * 10, 1e-3)
+    assert alone["gaps_over_3s_per_10min"] == pytest.approx(2 / 2 * 10, 1e-3)
+    assert alone["still_runs_per_10min"] >= 5.0  # the placed ball (2 s) is one still run
+    small = inspect_data.regime_vector(make_match(n=600, ball_missing=0.0))
+    assert len(small) == len(alone)  # the size never depends on the number of frames
