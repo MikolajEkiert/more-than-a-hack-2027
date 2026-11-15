@@ -109,3 +109,13 @@ of tasks 12-13 (M6), so it cannot be blind to them.
   stretches without a ball better. New method `ball_state.blend_by_ball` (weights by ball
   visibility); members `gate_s55`, `gate_s73`, `gate_s10`, `gate_s73_u37` (tracked-ball weights
   LightGBM/network 0.5/0.5, 0.7/0.3, 1/0, 0.7/0.3; no-ball weights 0/1 except the last, 0.3/0.7).
+- 2026-11-15 · Claude · The referee calibrated on the labelled sets (`disagree14.py --set`), V1 vs
+  M6, cell "V1 live / M6 dead" (share, ball tracked, running, truly dead) and "V1 dead / M6 live":
+  PFF 0.9% / 12% / 0.67 / 0.76 and 2.3% / 84% / 0.26 / 0.10; label_free 2.1% / 26% / 0.77 / 0.65 and
+  1.7% / 55% / 0.65 / 0.10; match_like 5.3% / 61% / 0.53 / 0.56 and 0.8% / 10% / 0.63 / 0.13;
+  plain IDSSE 1.4% / 11% / 0.74 / 0.46 and 1.1% / 21% / 0.63 / 0.51. Where the versions disagree
+  (moments of transition) the running share does not tell play from stoppage: M6 is right in
+  56-90% of those frames on PFF and Metrica, half of them on plain IDSSE. The match's "V1 dead /
+  M6 live" cell (ball tracked 88%, running 0.42) looks like PFF's (84%, 0.26, 90% live). So the
+  naive alarm was wrong; a label-free statistic of the match has to be calibrated on labelled
+  sets in the very cells where versions disagree before it can arbitrate between them.
