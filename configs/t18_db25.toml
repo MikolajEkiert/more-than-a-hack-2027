@@ -1,0 +1,21 @@
+# Task 18 member: version 4 (c14_best) with the team model's change: training labels debounced 2.5 s
+# (tasks/18-team-training-spell.md). Ball state and decoder are version 4's.
+name = "t18_db25"
+
+[ball_state]
+method = "blend"
+sources = ["sequence", "kickoff_wait"]
+
+[team]
+method = "blend"
+sources = [{ method = "supervised", features = "v1+team", labels = "controlled2.5" }]
+
+[decode]
+method = "switch_cost"
+turnover_cost = 5.0
+stop_cost = 16.0
+restart_cost = 12.0
+snap_start_s = 3.0
+snap_end_s = 3.0
+line_snap_s = 6.0
+line_margin_m = 0.5

@@ -184,10 +184,11 @@ def test_training_rows_are_the_packages_rows_with_the_block_appended():
 def test_unknown_feature_sets_and_options_are_errors():
     with pytest.raises(ValueError):
         supervised._check_team("v2")
-    for options in ({"data": "pff"}, {"regime": "mix_lf"}, {"tta": True}):
+    for options in ({"data": "pff"}, {"regime": "mix_lf"}):
         with pytest.raises(ValueError):
             supervised._check_team("v1+team", **options)
     supervised._check_team("v1+team")
+    supervised._check_team("v1+team", tta=True)  # task 18: swap-averaging exists for the block
     supervised._check_team("v1", data="pff", regime="mix_lf", tta=True)  # v1: not this check's
 
 
@@ -244,8 +245,99 @@ def test_the_team_set_appends_the_block(monkeypatch):
     np.testing.assert_array_equal(x[:, 2:], block)
     v1 = _fake_v1(supervised.container(match))[0].astype(np.float16)  # the package's dtype
     np.testing.assert_array_equal(x[:, :2], v1)
-    with pytest.raises(ValueError):
-        supervised.probabilities(make_match(n=300), features="v1+team", tta=True)
+
+
+class _SideBooster:
+    """Says P(H) = 0.7 when the first block column is the home view's, 0.1 otherwise."""
+
+    def __init__(self, width, column):
+        self.width, self.column, self.seen = width, column, []
+
+    def predict(self, x):
+        x = np.asarray(x)
+        self.seen.append(x)
+        home_view = np.isclose(x[:, self.width], self.column, equal_nan=True).all()
+        row = [0.7, 0.2, 0.1] if home_view else [0.1, 0.8, 0.1]
+        return np.tile(row, (len(x), 1))
+
+
+@pytest.mark.needs_model
+def test_team_set_tta_averages_the_swapped_view(monkeypatch):
+    """Task 18: with tta, the swapped match is predicted too (package features of the swapped
+    container, block of the swapped view) and its P(H) / P(A) are exchanged back before the mean."""
+    monkeypatch.setenv("POSSESSION_NO_FEATURE_CACHE", "1")
+    match = make_match(n=300)
+    m = supervised.container(match)
+    block = tf.build(m)[0]
+    swapped_block = tf.build(tf.swapped(m))[0]
+    j = int(np.argmax(np.any(block != swapped_block, axis=0)))  # a column the views differ on
+    assert not np.array_equal(block[:, j], swapped_block[:, j], equal_nan=True)
+    booster = _SideBooster(2, block[:, j])
+
+    def fake_v1(c):
+        return np.column_stack([c["bx"], c["by"]]).astype(np.float32), ["bx", "by"]
+
+    monkeypatch.setattr(supervised, "model", lambda *a: (booster, fake_v1))
+    plain = supervised.probabilities(match, features="v1+team-tw2")
+    np.testing.assert_allclose(plain, np.tile([0.7, 0.2, 0.1], (300, 1)))
+    p = supervised.probabilities(match, features="v1+team-tw2", tta=True)
+    # orig view: (0.7, 0.2, 0.1); swapped view (0.1, 0.8, 0.1) read back as (0.8, 0.1, 0.1)
+    np.testing.assert_allclose(p, np.tile([0.75, 0.15, 0.1], (300, 1)))
+    assert len(booster.seen) == 3  # the plain call, then the two views of the tta call
+    np.testing.assert_array_equal(booster.seen[2][:, 2:], swapped_block)
+    from solution import container as package_container
+
+    swapped_v1 = fake_v1(package_container.swap_teams(m))[0].astype(np.float16)
+    np.testing.assert_array_equal(booster.seen[2][:, :2], swapped_v1)
+
+
+def test_turn_multiplier_covers_team_changes_only():
+    """Task 18: frames within `frames` of an H/A hand-over get the factor; stoppage edges, X and
+    a change across a stoppage do not."""
+    from solution import container as C
+
+    h, a, d, x = C.H, C.A, C.D, C.X
+    label = np.array([h] * 6 + [a] * 6 + [d] * 4 + [h] * 5 + [x] * 2 + [a] * 3, np.int8)
+    w = supervised.turn_multiplier(label, frames=2, factor=4.0)
+    expected = np.ones(len(label))
+    expected[4:9] = 4.0  # the change at frame 6, +-2 frames
+    np.testing.assert_array_equal(w, expected)
+    np.testing.assert_array_equal(supervised.turn_multiplier(label, 2, 1.0), np.ones(len(label)))
+    # clipped at the ends, overlapping windows merge
+    short = np.array([h, a, h, h, h, h], np.int8)
+    np.testing.assert_array_equal(
+        supervised.turn_multiplier(short, 1, 2.0), [2.0, 2.0, 2.0, 2.0, 1.0, 1.0]
+    )
+    assert supervised.turn_multiplier(np.array([h], np.int8), 3, 2.0).tolist() == [1.0]
+
+
+def test_turn_rows_align_with_the_training_rows():
+    """The multiplier sits on the rows `_team_stack` builds (stride, X rows dropped, the swapped
+    orientation after the original), and the turn-weighted sets carry their options in the key."""
+    from solution import container as C
+    from solution import evaluate_external as ev
+
+    rng = np.random.default_rng(1)
+    prepared = []
+    for n in (60, 47):
+        label = rng.choice([C.H, C.A, C.D, C.X], size=n, p=[0.45, 0.45, 0.05, 0.05])
+        label = label.astype(np.int8)
+        swap = np.where(label == C.H, C.A, np.where(label == C.A, C.H, label)).astype(np.int8)
+        prepared.append({"m": {"label": label}, "X": None, "Xs": object(), "ys": swap})
+    for skip in (None, 0):
+        got = supervised._team_turn_rows(prepared, skip, frames=3, factor=2.0)
+        want = []
+        for j, d in enumerate(prepared):
+            if j == skip:
+                continue
+            for y in (d["m"]["label"], d["ys"]):
+                rows = np.flatnonzero(y != C.X)[:: ev.TRAIN_STRIDE]
+                want.append(supervised.turn_multiplier(y, 3, 2.0)[rows])
+        np.testing.assert_array_equal(got, np.concatenate(want))
+        assert set(np.unique(got)) <= {1.0, 2.0}
+    assert supervised._training_options("v1+team") == {}
+    assert supervised._training_options("v1+team-r600") == {}
+    assert supervised._training_options("v1+team-tw4") == {"turn_weight": 4.0, "turn_s": 1.0}
 
 
 def test_committed_team_model_is_listed_and_unpacks(tmp_path):
