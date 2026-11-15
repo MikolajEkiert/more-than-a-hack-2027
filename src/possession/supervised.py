@@ -775,6 +775,17 @@ def _never_trained_on(match: Match):
 # in the package's cache.
 FEATURE_SETS = {"v1": None, "v1+team": {"rounds": None}, "v1+team-r600": {"rounds": 600}}
 TEAM_DIR = CACHE_DIR / "team_features"  # blocks/, models/, folds/
+TEAM_MODELS_DIR = MODELS_DIR / "team"  # committed final models of the feature sets: <key>.txt.gz
+
+
+def seed_team_models(models_dir: Path = TEAM_MODELS_DIR, cache_dir: Path | None = None) -> list:
+    """Unpack the committed final models of the team-feature sets into TEAM_DIR/models.
+
+    The same mechanism as `seed_model_cache` for the package's model: a file is named by its
+    cache key, so it is used only if it is exactly the model this code would train, and a
+    sha256 that does not match `models/team/sha256` is an error. Returns the names written.
+    """
+    return seed_model_cache(models_dir, cache_dir or TEAM_DIR)
 
 
 def _check_team(features: str, data: str = "idsse", regime: str = "none", tta: bool = False):
@@ -967,6 +978,8 @@ def _train_final_team(labels: str, features: str):
     key = package_cache.digest(
         "team-final", *_team_key(labels, features), list(seeds), sorted(idsse.MATCHES)
     )
+    if _cache_on():
+        seed_team_models()
     return _cached_booster(TEAM_DIR / "models" / f"{key}.txt", fit)
 
 

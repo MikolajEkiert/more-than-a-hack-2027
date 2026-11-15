@@ -246,3 +246,26 @@ def test_the_team_set_appends_the_block(monkeypatch):
     np.testing.assert_array_equal(x[:, :2], v1)
     with pytest.raises(ValueError):
         supervised.probabilities(make_match(n=300), features="v1+team", tta=True)
+
+
+def test_committed_team_model_is_listed_and_unpacks(tmp_path):
+    """Every committed team-feature model is listed with the sha256 of its text and unpacks into a
+    cache folder under its own name (task 14: the submission must not depend on retraining)."""
+    import gzip
+    import hashlib
+
+    from possession import supervised
+
+    packed = sorted(supervised.TEAM_MODELS_DIR.glob("*.txt.gz"))
+    assert packed, "no committed team-feature model"
+    listing = dict(
+        line.split()[::-1]
+        for line in (supervised.TEAM_MODELS_DIR / "sha256").read_text().splitlines()
+        if line
+    )
+    for path in packed:
+        text = gzip.decompress(path.read_bytes())
+        assert hashlib.sha256(text).hexdigest() == listing[path.name[: -len(".gz")]]
+    written = supervised.seed_team_models(cache_dir=tmp_path)
+    assert sorted(written) == sorted(p.name[: -len(".gz")] for p in packed)
+    assert all((tmp_path / "models" / name).is_file() for name in written)
