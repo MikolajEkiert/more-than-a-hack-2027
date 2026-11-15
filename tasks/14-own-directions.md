@@ -114,3 +114,11 @@ of tasks 12-13 (M6), so it cannot be blind to them.
   a change aimed at a noisy ball is neutral there by construction (all three members within
   +-0.001, intervals +-0.006), so the veto measures luck, not harm. Rule B's "no loss beyond
   0.010" on plain IDSSE fits that set's role.
+- 2026-11-15 · Claude (team features) · Check for under-fitting, not a member of the decided
+  family: d_team with the model trained for 600 rounds (`d_team_r600`, feature set
+  `v1+team-r600`; final 387 s, 14 folds 1875 s, at 4 threads; block gain share 7.98%). Minus
+  d_team: `label_free` +0.002 [-0.001, +0.006] (2/3), `match_like` +0.009 [+0.002, +0.013] (3/3),
+  IDSSE -0.001 (4/7), `idsse_auto` +0.001 (3/7), PFF +0.002 (11/16). Minus version 1: +0.024,
+  +0.046, -0.001 (4/7), -0.001 (3/7), +0.003 (8/16); footprint 5.33 possessions per live
+  minute, dead 0.4914. Mildly under-fitted under the harsh profile only; alone it fails rule A
+  (IDSSE -0.001, PFF 8 of 16) and rule B (PFF 8 of 16, `idsse_auto` -0.001).
