@@ -771,3 +771,31 @@ Version 5 (`configs/c15_best.toml`, version 4 with turnover cost 6, sha256 `0167
 in both Linux containers) is the documented alternative. It is a bet on the `controlled` reading:
 +0.012 to +0.020 under it, -0.010 to +0.005 under `touch`, -0.004 to -0.007 on PFF. Against version 1
 it passes the team's rule A (plain IDSSE 6 of 7), which version 4 fails (3 of 7).
+
+## 14. Training the team model on more providers (task 17, 2026-11-15)
+
+**The idea** comes from other teams (research/COMPETITORS.md section 1: Barca-Hackathon, Team Sigue,
+SAM, Anfield train on DFL plus SkillCorner and/or Metrica). Version 4's team model (`v1+team`) is
+trained on the seven IDSSE matches only; `team.supervised(data=...)` can now add the 48 PFF training
+matches (`idsse+pff`), the 20 SkillCorner open matches (`idsse+sc`, `possession/skillcorner.py`) or
+both, in the package's proportions for extra data. IDSSE folds add all extra rows to the six training
+matches; the 16 PFF test matches and Metrica are never trained on.
+
+**Measured** (difference to version 4, weighted with `--bins truth:c14_best`, 5-95%, matches won):
+
+| set | IDSSE+PFF48 | IDSSE+SC | IDSSE+PFF48+SC |
+|---|---|---|---|
+| Metrica `label_free` | -0.008 [-0.016, -0.000] 0/3 | -0.006 [-0.013, +0.002] 0/3 | -0.006 [-0.014, +0.002] 0/3 |
+| Metrica `match_like` | -0.026 [-0.034, -0.019] 0/3 | -0.012 [-0.021, -0.003] 1/3 | -0.025 [-0.034, -0.016] 0/3 |
+| Metrica `match_regime` | -0.016 [-0.023, -0.009] 0/3 | -0.008 [-0.017, +0.001] 1/3 | -0.014 [-0.021, -0.006] 0/3 |
+| Metrica `match_regime_still` | -0.015 [-0.022, -0.007] 0/3 | -0.006 [-0.016, +0.003] 1/3 | -0.013 [-0.021, -0.005] 0/3 |
+| PFF, 16 test matches | +0.034 [+0.025, +0.042] 16/16 (in-domain) | +0.001 [-0.007, +0.011] 10/16 | +0.022 [+0.012, +0.032] 16/16 |
+| IDSSE plain, out of fold | +0.003 [-0.003, +0.010] 4/7 | +0.019 [+0.013, +0.025] 6/7 | +0.013 [+0.006, +0.019] 6/7 |
+| IDSSE automatic regime | +0.005 [-0.000, +0.012] 4/7 | +0.015 [+0.007, +0.022] 6/7 | +0.010 [+0.004, +0.016] 3/7 |
+
+The Metrica losses lie mostly under the `touch` reading (-0.017 to -0.035 for every variant); under
+`controlled` IDSSE+SC is within -0.007 to +0.003, the PFF variants lose -0.003 to -0.023. PFF's labels change hands at recorded on-ball events and SkillCorner's
+at player possessions, both later than IDSSE's flags, so a model trained on them reads possession
+more slowly: it gains where the truth is slow (PFF, IDSSE under `controlled3.5`) and loses where it is
+quick. **Rule D** (tasks/17-multi-provider-team.md, K = 3): the held-out pick is IDSSE+SC on every
+match, gain -0.008 against a threshold of +0.005 (5% bound -0.016). **Version 4 stays.**

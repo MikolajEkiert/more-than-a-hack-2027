@@ -94,7 +94,9 @@ Tried and dropped, each measured on other matches: estimating stoppage cues from
 giving the team of the last touch possession until the next touch; a prior that the other team
 restarts after a stoppage (it does in 47% of cases); the package's boundary detector inside our
 decoder; adding our label-free evidence to the model's; training on 48 PFF matches as well or on
-those alone; training labels with short interruptions merged and a slower decoder (a bet on how the
+those alone; training the team-feature model on 48 PFF and/or 20 SkillCorner open matches (MIT) as
+well, an idea of other teams (their labels change hands later, the model reads possession more
+slowly and loses on every Metrica profile; task 17); training labels with short interruptions merged and a slower decoder (a bet on how the
 ground truth reads "possession"); a decoder that picks the possessions with the largest expected
 `spellF1` under the model's posterior (it never beat the most likely path: the posterior is not
 calibrated enough); the temporal network's team head (its 5 Hz output blurs the moment of a change);
