@@ -170,3 +170,25 @@ def sequence(match: Match) -> np.ndarray:
     from possession import sequence as network
 
     return network.p_alive(match)
+
+
+@register("ball_state", "blend_by_ball")
+def blend_by_ball(
+    match: Match,
+    sources: list = ("supervised", "sequence", "kickoff_wait"),
+    weights_seen: list = (0.7, 0.3, 1.0),
+    weights_unseen: list = (0.0, 1.0, 1.0),
+) -> np.ndarray:
+    """Weighted sum of the log-odds of several ball_state sources, weights set by ball visibility.
+
+    `weights_seen` apply on frames where the tracking has the ball, `weights_unseen` where it has
+    not (task 14): the frame model has seen stoppages with the ball in view in its training
+    matches, the temporal network reads long stretches without a ball better. Sources as in
+    `blend`. A frame on which no source has a value counts as even odds.
+    """
+    from possession import fusion
+
+    seen = fusion.blend(match, "ball_state", sources, weights_seen)
+    unseen = fusion.blend(match, "ball_state", sources, weights_unseen)
+    out = np.where(match.ball_seen, seen, unseen)
+    return np.where(np.isnan(out), 0.5, out).astype(np.float32)

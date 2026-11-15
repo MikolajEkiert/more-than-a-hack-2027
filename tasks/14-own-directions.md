@@ -94,3 +94,18 @@ of tasks 12-13 (M6), so it cannot be blind to them.
   stays (match_like +0.018 < +0.02, IDSSE veto -0.001, 3/7). Rule B: change to M6 (held-out mean
   +0.021, 5% bound +0.015; PFF 16/16, IDSSE auto 7/7, plain IDSSE -0.001 within -0.010; footprint
   5.25 per live minute, dead 0.479).
+- 2026-11-15 · Claude · A label-free referee on the competition match (`scripts/disagree14.py`):
+  where two versions disagree on play / stoppage, the share of frames with running players
+  (1 s mean of the 90th percentile of player speed >= 2.5 m/s; 0.19-0.23 in true stoppages and
+  0.83-0.92 in true play on the labelled sets; on the match 0.137 where V1 and M6 both say dead
+  and 0.887 where both say live). V1 vs M6: V1 live / M6 dead on 2.1% of graded frames (ball
+  tracked 53%, running 0.65); V1 dead / M6 live on 3.6% (ball tracked 88%, running 0.42). Read
+  naively, M6's extra stoppages look like play and its extra play like stoppages, i.e. on the
+  match M6 would be worse than V1 where they disagree, mostly on stoppages with the ball in view
+  (which the match has on 25% of its dead frames, Metrica on 4-13%, PFF on 1%, plain IDSSE 58%).
+  The referee is being calibrated on the labelled sets before any conclusion.
+- 2026-11-15 · Claude · Hypothesis from that: V1's LightGBM (trained where the ball is in view
+  during 58% of stoppage frames) reads stoppages with a tracked ball better, the network reads
+  stretches without a ball better. New method `ball_state.blend_by_ball` (weights by ball
+  visibility); members `gate_s55`, `gate_s73`, `gate_s10`, `gate_s73_u37` (tracked-ball weights
+  LightGBM/network 0.5/0.5, 0.7/0.3, 1/0, 0.7/0.3; no-ball weights 0/1 except the last, 0.3/0.7).

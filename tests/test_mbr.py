@@ -42,3 +42,19 @@ def test_choose_takes_the_best_non_overlapping_set():
     value = np.array([0.5, 0.9, 0.5, 0.2])
     chosen = mbr.choose(cands, value)
     assert chosen.tolist() == [0, 2, 3]  # 0.5 + 0.5 + 0.2 = 1.2 > 0.9 + 0.2
+
+
+def test_blend_by_ball_switches_weights_with_visibility():
+    from possession.stages import ball_state
+
+    match = make_match(n=3000)
+    out = ball_state.blend_by_ball(
+        match,
+        sources=["ball_visible", "kickoff_wait"],
+        weights_seen=[1.0, 0.0],
+        weights_unseen=[0.0, 0.0],
+    )
+    seen = match.ball_seen
+    assert out.shape == (match.n_frames,)
+    assert (out[~seen] == 0.5).all()  # no weight anywhere: even odds
+    assert (out[seen] > 0.99).all()  # ball_visible says alive with certainty where the ball is
