@@ -407,6 +407,9 @@ OPTIONAL_DEGRADATION_KEYS = {
     "carried_ball_s": [0.0, 0.0],  # ... and before that moving to the spot for this long
     "placed_jitter_m": 0.0,  # standard deviation of the tracker's noise on that ball
     "reacquire_s": [0.0, 0.0],  # after the other restarts the ball is picked up this late
+    "still_ball_rate": 0.0,  # task 15: events per 10 live minutes of a tracked ball lying still
+    "still_ball_s": [0.0, 0.0],  # ... for this long, while play goes on
+    "still_ball_spare": 0.0,  # ... share of them a spare ball near a touch line, not a frozen track
 }
 
 
@@ -430,6 +433,7 @@ def degradation_profile(name: str) -> dict:
 
 
 RESTART_STREAM = 1  # the second random stream of `degrade`: np.random.default_rng([seed, 1])
+STILL_STREAM = 2  # the third (task 15): np.random.default_rng([seed, 2])
 
 
 def _restart_ball(ball, clean, alive, dead_starts, dead_stops, p: dict, seed: int, fps: int):
@@ -466,6 +470,41 @@ def _restart_ball(ball, clean, alive, dead_starts, dead_stops, p: dict, seed: in
     return late
 
 
+def _still_ball(ball, alive, p: dict, seed: int, fps: int, pitch) -> None:
+    """In place: a tracked ball that lies still while play goes on (task 15; off by default).
+
+    The competition match's tracked ball lies still for half a second or more 15.5 times per 10
+    graded minutes, twice as often as under any profile without this (`inspect_data.regime_vector`,
+    docs/FUSION.md section 11). Whether those are a frozen track, a spare ball by the touch line or
+    a goalkeeper holding the ball, nothing tells without labels; the first two are wrong balls and
+    are what this simulates. `still_ball_rate` events per 10 live minutes start on tracked live
+    frames; for `still_ball_s` the ball either stays where it was at the start (a frozen track) or,
+    for `still_ball_spare` of them, lies just outside a touch line at a random point along it, with
+    the tracker noise `placed_jitter_m` in both cases. Its own random stream (`STILL_STREAM`).
+    """
+    if p["still_ball_rate"] <= 0:
+        return
+    rng = np.random.default_rng([seed, STILL_STREAM])
+    n = len(ball)
+    tracked_live = np.flatnonzero(alive & ~np.isnan(ball[:, 0]))
+    if not len(tracked_live):
+        return
+    length, width = pitch
+    events = rng.poisson(p["still_ball_rate"] * alive.sum() / fps / 60.0 / 10.0)
+    for _ in range(int(events)):
+        start = int(rng.choice(tracked_live))
+        stop = min(start + int(rng.uniform(*p["still_ball_s"]) * fps), n)
+        if stop <= start:
+            continue
+        if rng.random() < p["still_ball_spare"]:
+            side = -1.0 if rng.random() < 0.5 else width + 1.0
+            spot = np.array([rng.uniform(0.0, length), side])
+        else:
+            spot = ball[start, :2].copy()
+        noise = rng.normal(0.0, p["placed_jitter_m"], (stop - start, 2))
+        ball[start:stop, :2] = spot + noise
+
+
 def degrade(
     match: Match, labels: np.ndarray, seed: int = 0, profile: str = "label_free", **overrides
 ) -> Match:
@@ -491,8 +530,12 @@ def degrade(
         this is where an automatic tracker that sees a ball being fetched and placed puts it
       * after the other restarts the ball is picked up only `reacquire_s` into play, so that it
         reappears already moving
-    What it does not reproduce: identity switches, duplicated players, a ball visible but wrong,
-    and which moments the real tracker loses (it is not random).
+      * (task 15) `still_ball_rate` times per 10 live minutes the tracked ball lies still for
+        `still_ball_s` while play goes on: the track freezes where the ball was, or, for
+        `still_ball_spare` of the events, the tracker follows a spare ball lying just outside a
+        touch line (`_still_ball`)
+    What it does not reproduce: identity switches, duplicated players, and which moments the real
+    tracker loses (it is not random).
     """
     allowed = (*DEGRADATION_KEYS, *OPTIONAL_DEGRADATION_KEYS)
     unknown = sorted(set(overrides) - set(allowed))
@@ -559,6 +602,9 @@ def degrade(
         start = int(rng.choice(alive_frames))
         hidden[start : start + int(rng.uniform(*p["free_gap_s"]) * fps)] = True
     ball[hidden | late] = np.nan
+
+    # 3b. (optional) a tracked ball lying still while play goes on; its own random stream
+    _still_ball(ball, alive, p, seed, fps, match.pitch)
 
     # 4. tracks drop out
     visible = ~np.isnan(players[:, :, 0])

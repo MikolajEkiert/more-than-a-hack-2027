@@ -61,3 +61,21 @@ found (M6, `d_team_m6`) and only the robust part is kept, decided by this rule.
 
 ## Log
 - 2026-11-15 · Claude · task opened from the approved plan; rule D written before measuring.
+- 2026-11-15 · Claude · Step 1: version 4's file regenerated from a fresh clone with an empty cache
+  in a Linux arm64 container (27 s) and an emulated Linux x86-64 container (44 s), Debian 12,
+  `uv sync --frozen` (`scripts/repro_container.sh`; LightGBM needs libgomp1, which the slim image
+  lacks): sha256 6fd87cc4467530fa... on both, the organisers' validator passes.
+- 2026-11-15 · Claude · Step 2: `possession/composition.py`, `scripts/composition15.py`, weighted
+  comparison in `scripts/grid14.py` (`compare --weighted`, `decide-d`). The match's 10-minute blocks
+  by our labels (V4 and V1): 0.10 / 0.30 / 0.40 / 0.20 below 9 / 9-12 / 12-15 / 15 or more stoppages
+  per 10 minutes. Window weights: Metrica 0.38 / 0.60 / 1.71 / 0 (covers 80% of the match), IDSSE
+  0.37 / 0.70 / 1.33 / 0 (80%), PFF 0.24 / 0.65 / 4.4 / 5.5 (100%). V4 minus V1, weighted (unweighted):
+  label_free +0.059 (+0.052), match_like +0.068 (+0.066), match_regime +0.050 (+0.049), PFF +0.038
+  (+0.046), plain IDSSE -0.001 (+0.001), IDSSE auto +0.027 (+0.023).
+- 2026-11-15 · Claude · Step 3: optional `still_ball_rate` / `still_ball_s` / `still_ball_spare` in
+  `validation.degrade` (own random stream; the three original profiles and `match_regime` stay byte
+  for byte, the latter checked by a stored hash). `match_regime_still` fitted by `scripts/still15.py`
+  on tracking statistics only: 18 events per 10 live minutes give 15.57 still runs per 10 minutes
+  (the match: 15.49) and a still share of tracked frames of 0.101 (0.100). Under it: V1 0.609 (0.655
+  under match_regime), M6 +0.026, d_team_m6 +0.052, V4 +0.056 [+0.046, +0.062], 3 of 3 (weighted
+  +0.057). Version 4 keeps, and widens, its lead under the match's own kind of ball noise.

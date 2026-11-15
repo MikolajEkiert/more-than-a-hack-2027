@@ -268,3 +268,55 @@ def test_calibrate_to_match_takes_points_a_vector_and_a_loss(monkeypatch):
     expected = validation.agreement_loss(default[0], target)
     assert default[0]["loss"] == pytest.approx(expected, abs=1e-4)
     assert "missing_given_live" not in default[0]
+
+
+# -- task 15: a tracked ball lying still while play goes on --------------------------------------
+
+MATCH_REGIME_GOLDEN = "3590fce405c6ed7f8c0e2b1d7f8951fcab9c56fc243a62461716ad2ab9ba4c75"
+
+
+def test_match_regime_degrades_exactly_as_before_task_15():
+    """The profile fitted in task 14 must not move: its degraded matches key cached features."""
+    import hashlib
+
+    match, labels = _match_with_stoppages()
+    out = validation.degrade(match, labels, seed=3, profile="match_regime")
+    digest = hashlib.sha256(
+        np.ascontiguousarray(out.ball).tobytes() + np.ascontiguousarray(out.players).tobytes()
+    ).hexdigest()
+    assert digest == MATCH_REGIME_GOLDEN
+
+
+def _still_runs(ball, alive, fps=25):
+    still = np.zeros(len(ball), dtype=bool)
+    step = np.hypot(*np.diff(ball[:, :2], axis=0).T) * fps
+    still[1:] = step < 1.0
+    starts, stops = runs(still & alive)
+    return [(a, b) for a, b in zip(starts, stops, strict=True) if b - a >= fps // 2]
+
+
+def test_still_ball_freezes_the_track_or_follows_a_spare_ball():
+    match, labels = _match_with_stoppages()
+    alive = np.isin(labels, ("H", "A"))
+    quiet = dict(QUIET, placed_jitter_m=0.0, still_ball_s=[1.0, 2.0])
+    base = validation.degrade(match, labels, seed=5, profile="match_regime", **quiet)
+    frozen = validation.degrade(
+        match, labels, seed=5, profile="match_regime", still_ball_rate=60.0, **quiet
+    )
+    spare = validation.degrade(
+        match, labels, seed=5, profile="match_regime",
+        still_ball_rate=60.0, still_ball_spare=1.0, **quiet,
+    )  # fmt: skip
+    assert len(_still_runs(frozen.ball, alive)) > len(_still_runs(base.ball, alive))
+
+    def differs(a, b):
+        return ~np.all(np.isclose(a[:, :2], b[:, :2], equal_nan=True), axis=1)
+
+    changed = np.flatnonzero(differs(spare.ball, base.ball) & alive)
+    assert len(changed)
+    y = spare.ball[changed, 1]
+    assert np.all((y < 0) | (y > match.pitch[1]))  # every spare ball lies outside a touch line
+    # everything outside the events is untouched, players included
+    same = ~differs(frozen.ball, base.ball)
+    assert same.mean() > 0.5
+    assert frozen.players.tobytes() == base.players.tobytes()

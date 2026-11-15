@@ -1,0 +1,106 @@
+{
+  "name": "match_regime_still",
+  "params": {
+    "ball_offset_m": 1.0,
+    "ball_smooth_s": 0.6,
+    "carried_ball_s": [
+      2.0,
+      10.0
+    ],
+    "free_gap_s": [
+      4.0,
+      9.0
+    ],
+    "lead_in_fraction": 0.5,
+    "lead_in_s": [
+      2.0,
+      8.0
+    ],
+    "lost_ball_share": 0.05,
+    "placed_ball_prob": 0.35,
+    "placed_ball_s": [
+      1.0,
+      4.0
+    ],
+    "placed_jitter_m": 0.05,
+    "players_visible": 20.5,
+    "reacquire_s": [
+      0.0,
+      1.0
+    ],
+    "visible_dead_prob": 0.25,
+    "visible_dead_s": [
+      0.5,
+      2.0
+    ],
+    "still_ball_s": [
+      0.5,
+      3.0
+    ],
+    "still_ball_spare": 0.5,
+    "still_ball_rate": 18.0
+  },
+  "source": "match_regime (task 14) plus a tracked ball lying still while play goes on (task 15): the rate is fitted by scripts/still15.py so that the degraded Metrica matches show the still-run rate and the share of still tracked frames of the competition match's tracking (inspect_data.regime_vector, tracking only). No label and no published score.",
+  "evidence": {
+    "target": {
+      "still_runs_per_10min": 15.486,
+      "still_given_tracked": 0.1
+    },
+    "grid": [
+      {
+        "still_ball_rate": 0.0,
+        "still_runs_per_10min": 7.105,
+        "still_given_tracked": 0.0667,
+        "loss": 0.8739
+      },
+      {
+        "still_ball_rate": 6.0,
+        "still_runs_per_10min": 9.4573,
+        "still_given_tracked": 0.0767,
+        "loss": 0.6223
+      },
+      {
+        "still_ball_rate": 10.0,
+        "still_runs_per_10min": 11.353,
+        "still_given_tracked": 0.0846,
+        "loss": 0.4212
+      },
+      {
+        "still_ball_rate": 14.0,
+        "still_runs_per_10min": 13.425,
+        "still_given_tracked": 0.0922,
+        "loss": 0.2111
+      },
+      {
+        "still_ball_rate": 18.0,
+        "still_runs_per_10min": 15.5657,
+        "still_given_tracked": 0.1011,
+        "loss": 0.0158
+      },
+      {
+        "still_ball_rate": 22.0,
+        "still_runs_per_10min": 17.393,
+        "still_given_tracked": 0.1091,
+        "loss": 0.2145
+      },
+      {
+        "still_ball_rate": 26.0,
+        "still_runs_per_10min": 19.185,
+        "still_given_tracked": 0.117,
+        "loss": 0.4092
+      }
+    ],
+    "fixed": {
+      "still_ball_s": [
+        0.5,
+        3.0
+      ],
+      "still_ball_spare": 0.5
+    },
+    "games": [
+      "metrica-sg1",
+      "metrica-sg2",
+      "metrica-sg3"
+    ]
+  }
+}
