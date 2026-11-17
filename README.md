@@ -7,7 +7,7 @@ This repository is team **culers**' solution. The organisers' own README follows
 | What we submit | `culers.csv`: H / A / D for every frame of BAR-ATH |
 | Configuration | [`configs/c14_best.toml`](configs/c14_best.toml) (version 4; version 1, `configs/hybrid_supervised.toml`, stays on the branch `fallback/hybrid`) |
 | sha256 of the file | `6fd87cc4467530fa3b208a9dc9458d91949a8c98ef8a1b6ffc69cf9622fe29b7` |
-| Technical document | [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md) |
+| Technical document | [`docs/TECHNICAL_SUMMARY.md`](docs/TECHNICAL_SUMMARY.md) (3 pages, submitted); full report [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md) |
 | How we decided things | [`docs/DECISIONS.md`](docs/DECISIONS.md), one line per decision, including what was dropped |
 
 ## Regenerate the submitted file
