@@ -41,3 +41,7 @@ that sees about 51 s around each frame, trained in the mixed ball regime chosen 
 - 2026-11-14: 14 fold networks and the final one trained on the CPU (1 h 22 min); G4 9e-15.
 - 2026-11-14: M6 +0.025 / +0.018 on Metrica (held out), -0.001 IDSSE (3/7), +0.044 PFF (16/16).
   The rule keeps version 1 (+0.018 < +0.02 under match_like; IDSSE veto).
+- 2026-11-14: Note on the training data. Each fold network (`sequence_train.folds`) trains on one
+  noise seed's copies in both ball regimes of `mix_lf`; the final network (`sequence_train.final`)
+  trains on seed 0 in the plain regime and seed 1 in the automatic one. The share of each regime
+  is the same (half and half); the noise draws behind them differ.

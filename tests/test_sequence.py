@@ -1,9 +1,12 @@
-import importlib
+import subprocess
 import sys
 
 import numpy as np
 
 from possession import sequence
+from possession.stages.ball_state import sequence as sequence_ball_state
+from possession.stages.team import sequence as sequence_team
+from tests.conftest import make_match
 
 
 def _naive_conv(x, w, b, dilation):
@@ -77,7 +80,38 @@ def test_logits_run_each_half_alone_and_are_zero_outside():
     assert not np.allclose(again[half == 2], out[half == 2])
 
 
-def test_the_inference_module_never_needs_torch(monkeypatch):
-    monkeypatch.setitem(sys.modules, "torch", None)
-    importlib.reload(sequence)
-    assert sequence.conv_same(np.ones((3, 1)), np.ones((1, 1, 1)), np.zeros(1), 1).shape == (3, 1)
+def test_the_inference_module_never_needs_torch():
+    # a fresh interpreter, so that reloading never touches this process's module (its `final`
+    # cache, or the predictions the autouse fixture stubs)
+    code = (
+        "import sys\n"
+        "sys.modules['torch'] = None\n"
+        "import numpy as np\n"
+        "from possession import sequence\n"
+        "assert sequence.conv_same(np.ones((3, 1)), np.ones((1, 1, 1)), np.zeros(1), 1).shape"
+        " == (3, 1)\n"
+        "assert sys.modules['torch'] is None\n"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_stage_methods_read_the_two_heads_with_the_right_signs(monkeypatch):
+    match = make_match(n=600)
+    z = np.zeros((match.n_frames, 2))
+    z[:300, 0], z[300:, 0] = 6.0, -6.0  # z_dead: dead, then live
+    z[::2, 1], z[1::2, 1] = 6.0, -6.0  # z_home: home, then away
+    monkeypatch.setattr(sequence, "predictions", lambda m: z)
+
+    alive, home = sequence_ball_state(match), sequence_team(match)
+    np.testing.assert_allclose(alive, 1.0 / (1.0 + np.exp(z[:, 0])))
+    np.testing.assert_allclose(home, 1.0 / (1.0 + np.exp(-z[:, 1])))
+    assert alive[:300].max() < 0.01 and alive[300:].min() > 0.99
+    assert home[::2].min() > 0.99 and home[1::2].max() < 0.01
+
+
+def test_the_committed_network_matches_its_listing_and_torch():
+    listing = (sequence.MODELS_DIR / "sha256").read_text().splitlines()
+    listed = {line.split()[1] for line in listing if line}
+    assert listed == {p.name for p in sequence.MODELS_DIR.glob("*.npz")}
+    net = sequence.final()  # raises if the sha256 does not match the listing
+    assert sequence.check(net) < 1e-9  # gate G4: numpy reproduces torch's float64 output
