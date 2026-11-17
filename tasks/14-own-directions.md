@@ -1,5 +1,5 @@
 ---
-status: review
+status: done
 owner: MikolajEkiert (Claude, with sub-agents)
 stage: ball_state, team, decode, infra
 ---

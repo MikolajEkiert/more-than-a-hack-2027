@@ -1,5 +1,5 @@
 ---
-status: review
+status: done
 owner: MikolajEkiert (Claude); reviewer: alargh
 stage: ball_state, team
 ---

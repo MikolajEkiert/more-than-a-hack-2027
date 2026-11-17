@@ -8,6 +8,7 @@ Repository: https://github.com/MikolajEkiert/more-than-a-hack-2027
 | Submitted configuration | `configs/c14_best.toml` (version 4) |
 | sha256 of `culers.csv` | `6fd87cc4467530fa3b208a9dc9458d91949a8c98ef8a1b6ffc69cf9622fe29b7` |
 | Regenerate | `make submit CONFIG=configs/c14_best.toml TEAM=culers` (section 7) |
+| Produced from | commit `8517976` on `main` (2026-11-17); `make submit` ran the pipeline twice, the second time from a fresh parse, got the same sha256, and the official `evaluation/validate_submission.py` reports the file valid |
 
 Every number below comes from `docs/DECISIONS.md`, docs/FUSION.md and the run files in
 `experiments/runs/`. Version 1, the configuration we had ready before (`configs/hybrid_supervised.toml`,
