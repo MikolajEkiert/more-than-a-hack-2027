@@ -1,0 +1,20 @@
+# Task 14, team features: configs/d_team.toml with the model trained for 600 boosting rounds
+# instead of the package's 300 (feature set "v1+team-r600"), to see whether the larger feature
+# set leaves the model under-fitted. Everything else as d_team.
+name = "d_team_r600"
+
+[ball_state]
+method = "blend"
+sources = ["supervised", "kickoff_wait"]
+
+[team]
+method = "blend"
+sources = [{ method = "supervised", features = "v1+team-r600" }]
+
+[decode]
+method = "switch_cost"
+turnover_cost = 5.0
+stop_cost = 12.0
+restart_cost = 12.0
+snap_start_s = 3.0
+snap_end_s = 3.0

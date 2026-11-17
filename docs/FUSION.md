@@ -416,3 +416,461 @@ tracked on PFF; if it does not, only bugs are fixed, nothing is tuned.
 - **G3.** The mechanism check above.
 - **G4.** Task 13's numerical check, defined in `tasks/13-sequence-model.md`: the numpy inference
   reproduces torch's float64 output on a stored input to 1e-9.
+
+## 11. Is the verification matched to the match? (task 14, 2026-11-15)
+
+**One vector, every set, read the same way.** `scripts/regime_compare.py` computes the same
+aggregates (`inspect_data.regime_vector`) on the competition match and on every condition of every
+validation set, split by version 1's labels (the only labels the match has, so the comparison is
+like for like), plus the agreement of version 1 with `unsup_v2` (`validation.agreement`). On the
+labelled sets the same split by the truth (in brackets) shows how far version 1's labels distort
+the picture: little for the ball lost in play, much for where inside stoppages the ball is seen.
+
+| statistic (version 1's labels) | match | `label_free` | `match_like` | IDSSE plain | `idsse_auto` | PFF |
+|---|---|---|---|---|---|---|
+| P(ball missing \| play) | 0.077 | 0.152 (0.155) | 0.222 (0.255) | 0.403 (0.406) | 0.237 (0.252) | 0.048 (0.063) |
+| P(ball missing \| stoppage) | 0.746 | 0.909 (0.963) | 0.971 (0.873) | 0.418 (0.416) | 0.897 (0.895) | 0.932 (0.992) |
+| ball in view in the first / middle / last third of stoppages | 0.28 / 0.20 / 0.29 | 0.11 / 0.08 / 0.08 | 0.05 / 0.02 / 0.02 | 0.59 / 0.58 / 0.58 | 0.23 / 0.06 / 0.02 | 0.08 / 0.04 / 0.09 |
+| stoppages with the ball lying still in the 3 s before the restart | 0.35 | 0.07 | 0.00 | 0.56 | 0.05 | 0.12 |
+| runs of a still ball (0.5 s or more) per 10 min | 15.5 | 9.0 | 0.0 | 4.5 | 0.8 | 19.5 |
+| median speed of the ball reappearing after a long gap (m/s) | 12.0 | 6.7 | 8.4 | 2.7 | 7.7 | 9.8 |
+| median distance from a tracked ball to the nearest player (m) | 1.91 | 1.41 | 2.79 | 2.83 | 1.70 | 0.55 |
+| median stretch of play without a ball, 1 s or more (s) | 6.0 | 5.8 | 5.8 | 12.2 | 6.3 | 3.1 |
+| stoppages per 10 min; dead share | 12.8; 0.49 | 10.1; 0.40 | 10.0; 0.35 | 10.0; 0.45 | 9.8; 0.46 | 11.0; 0.46 |
+| agreement of our two pipelines: possessions / team / team margin | 0.456 / 0.829 / 0.678 | 0.626 / 0.887 / 0.737 | 0.457 / 0.798 / 0.676 | 0.467 / 0.786 / 0.745 | 0.553 / 0.862 / 0.777 | 0.685 / 0.935 / 0.823 |
+
+Mean relative distance to the match per aspect (0 = the same; `regime_compare.py table`):
+
+| aspect | `label_free` | `match_like` | IDSSE plain | `idsse_auto` | PFF |
+|---|---|---|---|---|---|
+| ball lost in play | 0.33 | 0.36 | **0.69** | 0.47 | 0.28 |
+| ball lost in stoppages | 0.48 | 0.63 | 0.36 | 0.46 | 0.49 |
+| ball in view in stoppages | 0.39 | 0.48 | 0.45 | 0.51 | 0.42 |
+| tracked ball (tracking only) | 0.31 | 0.51 | 0.49 | 0.31 | 0.24 |
+| ball near a player | 0.18 | 0.26 | 0.21 | 0.08 | 0.49 |
+| hardness (agreement, no labels) | 0.14 | 0.01 | 0.06 | 0.11 | 0.21 |
+| overall (ten aspects) | 0.26 | 0.30 | 0.32 | 0.28 | 0.30 |
+
+What it says. No set resembles the match on everything. The match loses the ball on 8% of play
+and 75% of stoppage time; it keeps the ball in view during a quarter of its stoppage time, spread
+over the whole stoppage, and in a third of its stoppages the ball lies still before the restart
+(placed). Every degradation profile so far showed the ball only at a stoppage's start (rolling
+on), and the 2.0 m offset of `match_like` never lets it lie still. `match_like` reproduces how hard
+the match is (by construction) but not why: it loses the ball on 22-26% of play instead of 8% and
+puts it 2.8 m from the nearest player instead of 1.9 m. PFF is the closest set for the ball lost in
+play; plain IDSSE the farthest (41% lost at random). What no degradation can change: the match has
+more stoppages (12.8 per 10 minutes against about 10) and more dead time (0.49 by version 1).
+
+**The profile `match_regime`.** `validation.degrade` gained optional mechanisms (off by default,
+on a second random stream, so the three existing profiles give byte-identical degraded matches):
+before a share of the restarts the ball is carried in view to the restart spot and lies there;
+after the others it is picked up late; and the share of the live ball loss placed before
+stoppages can be set. `scripts/regime_compare.py fit` searched two grids (24 settings for the ball
+in stoppages, then 32 for the loss in play and the ball offset; 3 matches, seed 0, version 1 and
+`unsup_v2` run on each) for the degradation whose statistics, read through version 1's labels, are
+closest to the match's: five groups of statistics, the agreement of our two pipelines counted
+twice. Best (loss 0.157): the ball lost on 5% of live frames in stretches of 4-9 s, half of it
+just before stoppages; rolling on after 25% of stoppages for 0.5-2 s; before 35% of the restarts
+carried in view for 2-10 s and placed for 1-4 s (0.05 m tracker noise); after the others picked up
+0-1 s late; offset 1.0 m.
+
+| statistic (version 1's labels) | match | `match_regime` |
+|---|---|---|
+| P(ball missing \| play) / P(ball missing \| stoppage) | 0.077 / 0.746 | 0.068 / 0.797 |
+| ball in view in the first / middle / last third of stoppages | 0.28 / 0.20 / 0.29 | 0.13 / 0.17 / 0.31 |
+| stoppages with the ball lying still before the restart | 0.35 | 0.35 |
+| tracked stoppage frames with the ball still / outside the pitch | 0.35 / 0.15 | 0.37 / 0.20 |
+| median distance from a tracked ball to the nearest player in play (m) | 1.89 | 1.83 |
+| runs of a still ball per 10 min; reappearance speed (m/s) | 15.5; 12.0 | 7.1; 7.4 |
+| agreement: possessions / team / team margin | 0.456 / 0.829 / 0.678 | 0.564 / 0.864 / 0.735 |
+
+It matches the match's ball regime far better than any earlier profile and misses its hardness:
+our two pipelines agree on 0.56 of possessions under it against 0.46 on the match, close to
+`label_free` (0.63). The grid shows why: the offset reaches the match's agreement only at 2.5 m
+(0.46-0.47; 0.52-0.54 at 1.5 m, 0.50-0.52 at 2.0 m), where the ball is 2.9-3.0 m from the nearest
+player, against 1.9 m on the match (1.8 m at an offset of 1.0 m).
+Whatever makes the match hard (identity switches, a ball seen in the wrong place, the players'
+own tracking errors; none of them simulated) is not the ball's position noise. So `match_regime`
+is the evidence for how stoppages and a missing ball look, `match_like` for how hard the team
+evidence is; neither is both. The match also has twice as many short still-ball runs (15.5
+against 7.1 per 10 minutes; a quarter of its still frames fall in version 1's play) and its ball
+reappears faster (12 m/s against 7.4): spare balls or false detections lying still, and a later
+pick-up, may be what is missing.
+
+Mean relative distance to the match per aspect, `match_regime` added: ball lost in play 0.16, in
+stoppages 0.17, in view in stoppages 0.19, tracked ball 0.22, ball near a player 0.08, hardness
+0.10; overall 0.17 against 0.26 (`label_free`), 0.28 (`idsse_auto`), 0.30 (PFF, `match_like`) and
+0.32 (plain IDSSE). It is the closest set on six of ten aspects, not on hardness.
+
+**The reference versions under `match_regime`** (`grid14.py measure ... --sets
+metrica:match_regime`, 3 matches x 3 seeds, both readings; difference to version 1, 5-95% interval
+over (match, window) blocks):
+
+| member | spellF1 | difference | touch | controlled | matches won (per match) |
+|---|---|---|---|---|---|
+| V1 | 0.655 | | | | |
+| M3 (regime-mixed LightGBM) | 0.665 | +0.010 [+0.007, +0.012] | +0.009 | +0.010 | 3 of 3 (+0.008, +0.007, +0.014) |
+| M5 (temporal network blended 0.5/0.5) | 0.674 | +0.019 [+0.015, +0.023] | +0.018 | +0.020 | 3 of 3 (+0.016, +0.015, +0.027) |
+| M6 (temporal network for stoppages) | 0.675 | +0.021 [+0.016, +0.024] | +0.020 | +0.021 | 3 of 3 (+0.019, +0.013, +0.030) |
+
+Version 1 scores about what it scores under `label_free` (0.659), as the agreement statistics
+predicted. M6's gain sits between `label_free` (+0.025) and `match_like` (+0.018), not near PFF
+(+0.044): extrapolating the sets' trend in P(ball missing | play) to the match (about 0.08) would
+have promised about +0.04, but the ball in view during stoppages, which PFF never shows, takes
+part of the temporal network's advantage away. Rule A does not use this profile and its verdict
+stays (version 1). Rule B as written (`label_free`, `match_like`) and with `match_regime` added to
+its evidence both choose M6: held-out +0.021 (5% bound +0.015 and +0.016), PFF +0.044 (16 of 16),
+`idsse_auto` +0.026 (7 of 7), plain IDSSE -0.001 (3 of 7, above its floor of -0.010), footprint
+5.25 possessions per live minute and dead share 0.479. The IDSSE matches in the `match_regime`
+regime were not measured: every IDSSE condition needs out-of-fold predictions, which for a new
+input regime means retraining the fold models, and the machine had no room for it.
+
+**How much the protocol can see** (`scripts/protocol_check.py`, from the cells in `.cache/family`).
+
+- *Noise of a paired difference.* Pooled over M3-M6 and both evidence profiles: one degradation
+  seed of a match differs from the mean of its three seeds by 0.006 (SD); matches differ by a
+  further 0.005; the split between the two readings varies by 0.002 from match to match; a
+  bootstrap over (match, 10-minute window) blocks gives a standard error of 0.0035. A profile's
+  mean over 3 matches x 3 seeds has a standard error of about 0.004 (0.003 for the mean of both
+  profiles, which correlate 0.22). Plain IDSSE and `idsse_auto` matches spread by 0.005-0.008 around
+  a member's mean, PFF matches by 0.019.
+- *What rule A can accept.* Its +0.02 per profile is five standard errors: an effect-size
+  threshold, not a test against noise. Simulated with that noise (same true effect on every set),
+  rule A accepts a true +0.02 change 27% of the time, +0.03 99%, +0.01 never; rule B (+0.010 and a
+  5% bound above 0) accepts +0.01 half of the time and +0.02 always, and never a change of 0. If the
+  change has no effect on plain IDSSE, as for a ball-state change in the match's regime, rule A
+  with its vetoes accepts a true +0.03 change 22% of the time: the IDSSE veto is then a coin toss
+  on seven matches. M6's held-out +0.018 under `match_like` is 0.5 standard errors below the
+  threshold: a member with a true +0.02 there fails that condition half of the time.
+- *The set matters more than the noise.* A member's effect varies between sets by an SD of 0.012
+  (M3), 0.013 (M5), 0.016 (M6) and 0.015 (`bs_w37`), three to four times the standard error within
+  a set, and for M5, M6 and `bs_w37` it follows the set's P(ball missing | play) with a correlation
+  of -0.92 to -0.96 (PFF 0.06: +0.044 for M6; `label_free` 0.16: +0.025; `match_like` and
+  `idsse_auto` 0.25: +0.018 and +0.026; plain IDSSE 0.41: -0.001). Which set stands for the match is
+  the decision; the noise within a set is not what limits it.
+- *Rankings.* Within the ball-state family (V1, M3, M4, M5, M6, `bs_w37`) the order of the members
+  agrees between `label_free`, `match_like` and PFF (Kendall's tau 0.73-0.87) and not at all
+  between plain IDSSE and any other set (-0.20 to -0.07). With the team-stage members of task 14
+  included (large losses on every set) every pair of sets agrees (0.45-0.93).
+- *Selection.* The three Metrica matches have served at least about 90 documented configurations
+  before task 14 (docs/DECISIONS.md: decoder costs, touch-episode parameters, the version 3 family,
+  PFF training, M3-M6, ...) and 41 more in task 14 so far (`.cache/family`), always the same three
+  matches and the same seeds. The best of 41 members with no effect would show about +0.007 on the
+  mean of both profiles by chance (standard error 0.003): below rule A's threshold, two thirds of
+  rule B's. The choice on two matches and scoring on the third corrects this within a family, not
+  across the many families that were designed after seeing these matches.
+- *Vetoes for a ball-state change.* Plain IDSSE loses the ball on 41% of play at random (the
+  match: 8%), and its ranking of ball-state members is unrelated to every other set's: it is not a
+  representative veto for them. PFF loses the ball in play like the match (6%) but never shows it
+  during stoppages (the ball is in view in 4.5% of its stoppages, the match's in 79%) and its
+  players are estimated: a fair veto for "is a missing ball read right", silent on placed balls.
+- *The two readings.* Possessions per live minute are restarts plus changes of team in play. By
+  version 1's labels the match has 2.54 restarts per live minute (Metrica 1.65-1.68, PFF 1.65-2.02)
+  and 3.05 changes in play, the same as version 1 on `label_free` (3.15) and PFF (3.06; PFF's truth
+  3.18) and fewer than on `match_like` (3.72), which is as hard as the match. Metrica's truth has
+  2.41 changes in play under `controlled` and 4.22 under `touch`. The published 4.2 possessions per
+  live minute of the public window (17 possessions, so roughly +-1) leave, at the match's restart
+  rate, about 1.7 changes in play per live minute. Both numbers fit `controlled` (or a match with
+  few changes of possession) and are hard to square with `touch`; with CHALLENGE.md's wording they
+  argue for weighting `controlled` above 50%. This uses the public window's published metadata as
+  information about the definition only; a weighting has to be fixed before the measurement it
+  decides.
+
+**A proposal: rule C, a verification matched to the match** (`scripts/protocol_check.py rule-c`).
+It is not a rule of the team. It was written after the results of tasks 12-13 were known, so it
+cannot be blind to them; the owner decides whether it replaces rule A for anything measured later.
+
+1. *Evidence*: the three Metrica matches under `match_regime`, the profile fitted to the match's own
+   ball regime and hardness. Readings weighted 2/3 `controlled`, 1/3 `touch` (fixed before any
+   measurement it decides). A member of a family is chosen on two matches and scored on the third.
+2. *Accept on the evidence* if the held-out weighted gain is at least +0.010 (2.5-3 standard errors
+   of today's noise for one profile; the best of 40 candidates without any effect would show about
+   +0.008 by chance), the 5% bound of a paired bootstrap over (match, 10-minute window) blocks is
+   above 0, and no reading under `match_regime` loses more than 0.005.
+3. *Other sets by what the change acts on*, from the similarity table above (to be recomputed with
+   `regime_compare.py table` whenever a set changes):
+
+   | change | other evidence: no reading below -0.010 | veto: mean >= 0 and most matches won | reported; only a loss below -0.020 blocks |
+   |---|---|---|---|
+   | ball state (stoppages) | `label_free` | PFF (9 of 16) | `match_like`, plain IDSSE, `idsse_auto` |
+   | team stage | `match_like` | plain IDSSE (5 of 7) | `label_free`, `idsse_auto`, PFF |
+
+   PFF is the set closest to the match on the ball lost in play; plain IDSSE and `match_like` are
+   the closest on hardness. A set that does not resemble the match on what the change acts on can
+   only block a change by a loss large enough to point at a bug.
+4. *Footprint* as in rule A: 3.5 to 7 possessions per live minute, dead share 0.35 to 0.50.
+5. *Multiplicity*: every configuration measured on the Metrica matches stays in `.cache/family`
+   and is counted; the threshold of point 2 is max(+0.010, SE x sqrt(2 ln K)), with K the
+   configurations compared for the decision and SE the pooled standard error of the primary
+   evidence (0.004 today: +0.011 for K = 40, +0.013 for K = 150).
+
+Applied to the family of section 10 (M3, M5, M6; post hoc, see above): the held-out choice is M6 on
+every match; its held-out gain under `match_regime` is +0.021 (touch +0.020, controlled +0.021;
+5% bound +0.016), above the threshold of +0.010 (K = 3; +0.011 if the 45 configurations of tasks
+12-14 so far are counted, +0.013 for about 150); `label_free` +0.024 / +0.026; PFF +0.044, 16 of
+16; reported `match_like` +0.018, plain IDSSE -0.001, `idsse_auto` +0.026; footprint inside. Rule
+C would change version 1 to M6. Rule A keeps version 1, on two conditions this section questions:
++0.018 under `match_like` against a threshold five standard errors above zero, and the plain IDSSE
+veto, the set least like the match for a ball-state change.
+
+## 12. Version 4 (task 14, 2026-11-15)
+
+**What it is** (`configs/c14_best.toml`). Three changes to version 1, each measured on its own
+first (docs/DECISIONS.md, task 14):
+
+1. *Stoppages*: the ball-state evidence of the temporal network of task 13 (M6), plus the kick-off
+   rule. The network reads about 51 s of context and was trained in the mixed ball regime.
+2. *Team*: the team evidence of a LightGBM trained exactly as version 1's, with 73 team features
+   appended to the package's 203 (`possession/team_features.py`): players goal-side of the ball
+   per team, the carry of each team's nearest player, the per-player mean distance to the ball
+   over 0.4 to 2.4 s, the speed of each team's players toward the ball, each team's spread
+   against its own median. They target a visible but noisy ball, which is what the match has.
+3. *Decoder*: a stoppage that begins within 6 s after the tracked ball left the pitch begins
+   when it left (Law 9), and stopping plus restarting costs 28 instead of 24.
+
+**Measured** (spellF1 minus version 1, 5-95% interval over (match, 10-minute window) blocks,
+matches won):
+
+| set | version 1 | version 4 | difference | touch / controlled (IDSSE: 1.5 / 3.5) | won |
+|---|---|---|---|---|---|
+| Metrica `label_free` | 0.659 | 0.711 | +0.052 [+0.041, +0.059] | +0.046 / +0.059 | 3 of 3 |
+| Metrica `match_like` | 0.524 | 0.590 | +0.066 [+0.054, +0.074] | +0.064 / +0.068 | 3 of 3 |
+| Metrica `match_regime` | 0.655 | 0.703 | +0.049 [+0.040, +0.055] | +0.041 / +0.057 | 3 of 3 |
+| PFF, 16 test matches | 0.773 | 0.820 | +0.046 [+0.039, +0.055] | one reading | 16 of 16 |
+| IDSSE, automatic ball regime | 0.665 | 0.689 | +0.023 [+0.017, +0.031] | +0.025 / +0.021 | 7 of 7 |
+| IDSSE, plain | 0.671 | 0.671 | +0.001 [-0.007, +0.005] | +0.003 / -0.002 | 3 of 7 |
+
+Each part contributes on its own: the temporal network about +0.02 on the Metrica profiles and
++0.044 on PFF (M6), the team features about +0.024 to +0.041 more on the Metrica profiles and
+nothing on PFF and IDSSE (their ball is precise or their team easy to read), the decoder +0.002 to
++0.007 more on Metrica and nothing elsewhere. On the competition match, label-free: 271
+possessions against 300 (4.91 against 5.59 per live minute), dead share 0.479 against 0.494,
+7.6% of graded frames labelled differently.
+
+**The decision** over the family measured last (M5, M6, `b_bundle_m6`, `d_team`, `d_both`,
+`d_team_m6`, `c14_best`; the member is chosen on two Metrica matches and scored on the third):
+version 4 is chosen on every held-out match.
+
+| rule | evidence | vetoes | verdict |
+|---|---|---|---|
+| A (section 10) | passes: +0.052, +0.066, every reading >= +0.046, 3 of 3 | PFF passes (16 of 16); IDSSE fails: mean +0.0006, but 3 of 7 matches won where 5 are needed | version 1 |
+| B (task 14) | +0.059, 5% bound +0.050 (with `match_regime`: +0.056, +0.048) | PFF, `idsse_auto`, plain IDSSE >= -0.010: pass | version 4 |
+| C (section 11, proposal) | +0.051 under `match_regime`, 5% bound +0.043 | as a ball-state change (PFF veto): pass; as a team change (plain IDSSE, 5 of 7): fails | version 4 or version 1 |
+
+All three rules agree on the evidence. They differ only on whether winning five of the seven
+plain IDSSE matches is required of a change whose mean difference there is +0.0006: a set on which
+the ball is lost at random in 41% of play and is otherwise precise, so that neither of the two
+main changes can act there (section 11: its ranking of ball-state members is unrelated to every
+other set's).
+
+**Reproducible.** The team-feature model is committed (`models/team/`) and unpacked under its
+cache key like the package's model; the temporal network is committed (`models/sequence/`).
+`possession submit configs/c14_best.toml` writes the same file twice from a fresh parse, sha256
+`6fd87cc4467530fa3b208a9dc9458d91949a8c98ef8a1b6ffc69cf9622fe29b7`, and the organisers' validator
+passes. With the team model removed from the cache the pipeline unpacks it and writes the same
+file; retrained from scratch, the team model is byte-identical to the committed one.
+
+## 13. An evaluation matched to the competition match (task 15, 2026-11-15)
+
+**What counts, and what the evaluation did not see.** The official score is spellF1 of one match,
+and the winners' repository may be re-run. Read through our own labels (aggregates only), that match
+differs from every validation truth in ways the metric is sensitive to:
+
+| | competition match (our labels) | validation truths |
+|---|---|---|
+| stoppages per 10 graded minutes | 12.1-12.8 | 9.6-10.7 |
+| possessions starting right after a stoppage | 0.45-0.47 | 0.28 (Metrica touch), 0.41 (controlled), 0.31 / 0.46 (IDSSE), 0.35 (PFF) |
+| median stoppage | 12-16 s | 15.5-20 s |
+| median possession, home / away | 9.4-9.9 / 5.6-6.4 s | symmetric |
+| 10-minute blocks with 15 or more stoppages | 20% | none in Metrica or IDSSE, 4% of PFF's |
+| still-ball runs per 10 minutes | 15.5 | 7.1 under `match_regime`, not simulated before |
+
+Nearly half of the match's possessions start at a stoppage, so its stoppage edges weigh more than in
+the validation; and version 4's gain over version 1 grows with a window's stoppage density
+(`label_free`: +0.040, +0.047, +0.068 for fewer than 9, 9-12, 12-15 stoppages per 10 minutes).
+
+**1. Reproducible on Linux.** `scripts/repro_container.sh` (task 08's check as a script): a fresh
+clone, an empty cache, the data mounted read-only, `uv sync --frozen`, `possession submit`. Version
+4 gives sha256 `6fd87cc4467530fa...` in a Linux arm64 container and in an emulated Linux x86-64
+container (Debian 12), as on macOS arm64.
+
+**2. Composition-weighted comparison** (`possession/composition.py`, `scripts/composition15.py`,
+`grid14.py compare --weighted`). Every 10-minute window of a validation set counts by the share of
+the match's blocks in its stoppage-density bin over the set's own share; readings 2/3 `controlled`,
+1/3 `touch` (the owner's choice for this task). The match's blocks (our labels): 0.10 / 0.30 / 0.40 /
+0.20 in the four bins; Metrica and IDSSE cover 80% of them, PFF all. Version 4 minus version 1:
+
+| set | unweighted | weighted, 5-95% |
+|---|---|---|
+| Metrica `label_free` | +0.052 | +0.059 [+0.045, +0.072] |
+| Metrica `match_like` | +0.066 | +0.068 [+0.053, +0.082] |
+| Metrica `match_regime` | +0.049 | +0.050 [+0.043, +0.058] |
+| PFF | +0.046 | +0.038 [+0.029, +0.047] |
+| IDSSE, automatic regime | +0.023 | +0.027 [+0.019, +0.036] |
+| IDSSE, plain | +0.001 | -0.001 [-0.007, +0.006] |
+
+**3. The match's own ball noise.** `validation.degrade` can lay a tracked ball still while play goes
+on (a frozen track, or a spare ball just outside a touch line; `still_ball_*`, own random stream, off
+by default; every earlier profile byte for byte). `match_regime_still` adds it to `match_regime` at
+the rate that reproduces the match's still-ball statistics from its tracking alone (18 events per 10
+live minutes: 15.57 still runs per 10 minutes against the match's 15.49; still share of tracked frames
+0.101 against 0.100). Part 5 shows it lays the ball still in play about four times more often than the
+match does, so it is a stress test. Under it version 1 falls from 0.655 to 0.609, and version 4's lead
+grows:
+
+| member | difference to version 1 | weighted | matches won |
+|---|---|---|---|
+| M6 (temporal network for stoppages) | +0.026 [+0.020, +0.031] | +0.025 | 3 of 3 |
+| d_team_m6 (plus the team features) | +0.052 [+0.042, +0.058] | +0.053 | 3 of 3 |
+| version 4 (plus the decoder options) | +0.056 [+0.046, +0.062] | +0.057 | 3 of 3 |
+
+**4. Version 4's stoppage settings under rule D** (tasks/15-match-matched-evaluation.md, written before
+measuring; reference version 4; evidence the four Metrica profiles above, weighted; floors PFF -0.005,
+IDSSE -0.010; K = 12 variants on version 4's evidence: stoppage plus restart cost 20 / 24 / 28 x line
+snap 0 / 6 s x turnover cost 5 / 6). Weighted difference to version 4, mean of the four profiles:
+
+| turnover 5 | line snap 0 | line snap 6 | | turnover 6 | line snap 0 | line snap 6 |
+|---|---|---|---|---|---|---|
+| cost 20 | -0.0065 | -0.0039 | | cost 20 | +0.0042 | +0.0067 |
+| cost 24 | -0.0047 | -0.0022 | | cost 24 | +0.0059 | +0.0083 |
+| cost 28 | -0.0023 | 0 (version 4) | | cost 28 | +0.0083 | +0.0105 |
+
+Lower stoppage costs lose even with the windows weighted toward the match's stoppage density, so
+version 4's 28 stands. Turnover cost 6 is chosen on every held-out match (+0.0105, 5% bound
++0.0076; `controlled` +0.014 to +0.020, `touch` -0.008 to +0.006) and fails the PFF floor: -0.0070
+weighted, -0.0042 unweighted (5 of 16 matches, interval below 0), while IDSSE gains (+0.008, +0.012,
+mostly under controlled3.5). It is a bet on the `controlled` reading, which the only set with real
+noise does not pay. **Version 4 stays**, now checked by an evaluation matched to the match on every
+point that counts: the file regenerates on Linux, the weighting by the match's composition and the
+match's still-ball noise both keep or widen its lead, and its decoder settings hold.
+
+**5. Correction: what the match's stoppage count means** (after part 4). The weighting bins the match
+by our labels and the windows by their truth, so it is only as good as our labels' stoppage count.
+Stoppages per 10 graded minutes, truth against version 4:
+
+| set | truth | version 4 | stoppages in true play (median length) |
+|---|---|---|---|
+| Metrica `label_free` | 10.47 | 10.01 | 1.03 (7.9 s) |
+| Metrica `match_like` | 10.47 | 10.13 | 1.53 (8.0 s) |
+| Metrica `match_regime` | 10.47 | 10.51 | 0.80 (8.7 s) |
+| Metrica `match_regime_still` | 10.47 | 12.43 | 2.75 (2.6 s) |
+| PFF | 9.59 | 10.02 | 0.86 (9.5 s) |
+| IDSSE, plain / automatic | 10.67 | 10.28 / 10.16 | 0.36 / 0.20 |
+
+Version 4 counts stoppages within about 0.5 of the truth everywhere except under the still ball. A
+first reading took the match's 12 for the same over-count and wrote a rule D' that bins both sides
+by version 4, which chose turnover cost 6. The lengths say otherwise (stoppages per 10 minutes, all by
+version 4):
+
+| | <2 s | 2-4 s | 4-8 s | 8-15 s | 15-30 s | 30 s+ | all |
+|---|---|---|---|---|---|---|---|
+| the match | 0.00 | 0.94 | 2.46 | 2.36 | 3.78 | 2.55 | 12.09 |
+| Metrica `match_regime` | 0.16 | 0.57 | 1.69 | 2.49 | 2.93 | 2.67 | 10.51 |
+| Metrica `match_regime_still` | 0.40 | 2.01 | 1.81 | 2.60 | 2.96 | 2.65 | 12.43 |
+
+The still ball's signature is an excess below 4 s. The match's excess lies at 2-8 s and 15-30 s, the
+lengths of ordinary stoppages. The match most likely has about 15% more stoppages than the validation
+matches, as part 2 read, and `match_regime_still` overstates its still ball in play about fourfold.
+Rule D' is withdrawn. The best-founded weighting bins the windows by their truth and the match by
+version 4 alone (`--bins truth:c14_best`; the match's bins 0.1 / 0.4 / 0.3 / 0.2). Under it:
+
+| set | version 4 minus version 1, weighted | version 5 minus version 4, unweighted / weighted |
+|---|---|---|
+| Metrica `label_free` | +0.056 [+0.044, +0.067] | +0.001 / +0.007 |
+| Metrica `match_like` | +0.068 [+0.055, +0.080] | +0.013 / +0.015 |
+| Metrica `match_regime` | +0.050 [+0.043, +0.057] | +0.006 / +0.010 |
+| Metrica `match_regime_still` | +0.057 [+0.049, +0.065] | +0.006 / +0.009 |
+| PFF | +0.041 [+0.032, +0.050] | -0.004 / -0.007 |
+| IDSSE, automatic regime | +0.026 [+0.018, +0.033] | +0.010 / +0.013 |
+| IDSSE, plain | -0.001 [-0.007, +0.006] | +0.006 / +0.008 |
+
+Rule D under this weighting keeps version 4: turnover cost 6 gains +0.0100 held out (threshold +0.0067,
+bound +0.0074) and fails the PFF floor (-0.0068 against -0.005). Unweighted, and under the withdrawn
+D', it would pass (PFF -0.0038 and -0.0027). The verdict therefore rests on the match having more
+stoppages than the validation matches, which the lengths support. **Version 4 stays.**
+
+Version 5 (`configs/c15_best.toml`, version 4 with turnover cost 6, sha256 `0167a8c6...`, reproduced
+in both Linux containers) is the documented alternative. It is a bet on the `controlled` reading:
++0.012 to +0.020 under it, -0.010 to +0.005 under `touch`, -0.004 to -0.007 on PFF. Against version 1
+it passes the team's rule A (plain IDSSE 6 of 7), which version 4 fails (3 of 7).
+
+## 14. A minimum stoppage length (task 16, 2026-11-15)
+
+Idea of other teams (Barca-Hackathon, SAM, ZesterJ): a decoder that refuses very short stoppages.
+Ours: `switch_cost(min_stop_s=..., min_stop_min_alive=...)` turns a stoppage shorter than `min_stop_s`
+lying between two spells of the same team, in one half, into that team; with `min_stop_min_alive`
+only where the mean p_alive over it is at least that value. Off by default. Family of 16 (rule in
+tasks/16-decoder-min-stoppage.md, written before measuring): 2 / 3 / 4 / 6 s x guard none / 0.2 x
+turnover cost 5 (version 4) / 6 (version 5). Unweighted difference to version 4, no guard:
+
+| set | 2 s | 3 s | 4 s | 6 s | version 5 | version 5 + 3 s |
+|---|---|---|---|---|---|---|
+| Metrica `label_free` | +0.000 | -0.000 | -0.000 | -0.007 | +0.001 | +0.001 |
+| Metrica `match_like` | +0.000 | +0.001 | +0.001 | -0.004 | +0.013 | +0.014 |
+| Metrica `match_regime` | +0.000 | +0.000 | -0.000 | -0.005 | +0.006 | +0.006 |
+| Metrica `match_regime_still` | +0.002 | +0.022 | +0.022 | +0.018 | +0.006 | +0.028 |
+| PFF | -0.000 | -0.000 | +0.000 | -0.002 | -0.004 | -0.005 |
+| IDSSE, plain | -0.000 | -0.001 | -0.002 | -0.005 | +0.006 | +0.005 |
+| IDSSE, automatic | -0.000 | -0.000 | -0.001 | -0.004 | +0.010 | +0.009 |
+
+The option undoes the still ball's false stoppages (2-4 s stoppages under `match_regime_still`: 2.01
+per 10 minutes by version 4, 0.89 with 3 s, truth 0.70) and does nothing useful elsewhere: in the
+truth 40-50% of 2-4 s stoppages also have one team on both sides, so merging them costs as much as it
+gains. On the match it removes 0.18 (3 s) or 0.66 (4 s) stoppages per 10 minutes, all of 2-4 s; the
+match's 4-8 s excess is out of its reach. Rule D (weights `truth:c14_best`) picks version 5 + 3 / 4 s
+(+0.0150 held out, threshold +0.0071) and fails the PFF floor (-0.0082 against -0.005), the same
+failure as version 5 in task 15. **Version 4 stays.** Under unit weights the rule would adopt
+version 5 + 4 s (PFF -0.0036); on version 4's decoder alone the gain is +0.0050, all of it from the
+still-ball stress profile, which overstates the match's still ball about fourfold (section 13).
+
+## 15. Training the team model on more providers (task 17, 2026-11-15)
+
+**The idea** comes from other teams (research/COMPETITORS.md section 1: Barca-Hackathon, Team Sigue,
+SAM, Anfield train on DFL plus SkillCorner and/or Metrica). Version 4's team model (`v1+team`) is
+trained on the seven IDSSE matches only; `team.supervised(data=...)` can now add the 48 PFF training
+matches (`idsse+pff`), the 20 SkillCorner open matches (`idsse+sc`, `possession/skillcorner.py`) or
+both, in the package's proportions for extra data. IDSSE folds add all extra rows to the six training
+matches; the 16 PFF test matches and Metrica are never trained on.
+
+**Measured** (difference to version 4, weighted with `--bins truth:c14_best`, 5-95%, matches won):
+
+| set | IDSSE+PFF48 | IDSSE+SC | IDSSE+PFF48+SC |
+|---|---|---|---|
+| Metrica `label_free` | -0.008 [-0.016, -0.000] 0/3 | -0.006 [-0.013, +0.002] 0/3 | -0.006 [-0.014, +0.002] 0/3 |
+| Metrica `match_like` | -0.026 [-0.034, -0.019] 0/3 | -0.012 [-0.021, -0.003] 1/3 | -0.025 [-0.034, -0.016] 0/3 |
+| Metrica `match_regime` | -0.016 [-0.023, -0.009] 0/3 | -0.008 [-0.017, +0.001] 1/3 | -0.014 [-0.021, -0.006] 0/3 |
+| Metrica `match_regime_still` | -0.015 [-0.022, -0.007] 0/3 | -0.006 [-0.016, +0.003] 1/3 | -0.013 [-0.021, -0.005] 0/3 |
+| PFF, 16 test matches | +0.034 [+0.025, +0.042] 16/16 (in-domain) | +0.001 [-0.007, +0.011] 10/16 | +0.022 [+0.012, +0.032] 16/16 |
+| IDSSE plain, out of fold | +0.003 [-0.003, +0.010] 4/7 | +0.019 [+0.013, +0.025] 6/7 | +0.013 [+0.006, +0.019] 6/7 |
+| IDSSE automatic regime | +0.005 [-0.000, +0.012] 4/7 | +0.015 [+0.007, +0.022] 6/7 | +0.010 [+0.004, +0.016] 3/7 |
+
+The Metrica losses lie mostly under the `touch` reading (-0.017 to -0.035 for every variant); under
+`controlled` IDSSE+SC is within -0.007 to +0.003, the PFF variants lose -0.003 to -0.023. PFF's labels change hands at recorded on-ball events and SkillCorner's
+at player possessions, both later than IDSSE's flags, so a model trained on them reads possession
+more slowly: it gains where the truth is slow (PFF, IDSSE under `controlled3.5`) and loses where it is
+quick. **Rule D** (tasks/17-multi-provider-team.md, K = 3): the held-out pick is IDSSE+SC on every
+match, gain -0.008 against a threshold of +0.005 (5% bound -0.016). **Version 4 stays.**
+
+## 16. Training the team model for spellF1 (task 18, 2026-11-15)
+
+Eight members on version 4's ball state and decoder, the team model "v1+team" retrained: weight x2
+or x4 on training rows within 1 s of a hand-over (after Team Sigue's boundary-weighted loss, SAM's
+short-spell weights, Mantas' hand-over weights; the package's own weights stay underneath), training
+labels debounced 1.5 or 2.5 s (the package's `controlled<s>`, a relabelling many teams use), and the
+home/away-swapped view averaged at inference (CoreOrigin, Sigue, O(1)Burger, SAM), alone and combined
+(tasks/18-team-training-spell.md has the table). Difference to version 4, unweighted:
+
+| member | Metrica, 4 profiles | `controlled` / `touch` | PFF | IDSSE plain / auto |
+|---|---|---|---|---|
+| weight x2 | -0.006 to -0.016 | -0.013 to -0.025 / -0.011 to +0.004 | -0.004 | -0.009 / -0.007 |
+| weight x4 | -0.023 to -0.035 | -0.039 to -0.046 / -0.024 to -0.001 | -0.020 | -0.016 / -0.011 |
+| debounce 1.5 s | +0.001 to +0.033 | +0.012 to +0.050 / -0.010 to +0.016 | -0.027 (2 of 16) | +0.017 / +0.017 |
+| debounce 2.5 s | -0.012 to +0.033 | +0.030 to +0.076 / -0.053 to -0.011 | -0.078 (0 of 16) | +0.017 / +0.020 |
+| test-time swap | -0.002 to +0.002 | within 0.003 | +0.001 (12 of 16) | -0.002 / +0.002 |
+
+Rule D (K = 8, threshold +0.0061): the held-out picks are the debounced members (gain +0.016, bound
++0.007), but every `touch` cell but one is below the -0.010 floor and PFF loses 0.087; with unit
+weights the same; against version 5 the bound is below 0 as well. **Version 4 stays.** Debouncing
+the training labels is the `controlled` bet of version 5 and of the dropped `tau2` labels, only
+larger; hand-over weights make the model switch team more readily; swap-averaging is neutral, as it
+was on version 1 (M4).

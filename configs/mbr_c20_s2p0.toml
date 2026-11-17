@@ -1,0 +1,21 @@
+# Task 14, minimum-Bayes-risk decoding on V1's evidence: spell cost 0.2, sharpness 2.0.
+name = "mbr_c20_s2p0"
+
+[ball_state]
+method = "blend"
+sources = ["supervised", "kickoff_wait"]
+
+[team]
+method = "blend"
+sources = ["supervised"]
+
+[decode]
+method = "mbr"
+turnover_cost = 5.0
+stop_cost = 12.0
+restart_cost = 12.0
+sharpness = 2.0
+spell_cost = 0.2
+n_samples = 64
+snap_start_s = 3.0
+snap_end_s = 3.0

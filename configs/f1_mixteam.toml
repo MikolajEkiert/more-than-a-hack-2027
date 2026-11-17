@@ -1,0 +1,18 @@
+# Task 14, direction F1: V1 ball state; team evidence from the LightGBM trained in the mixed ball regime (M3's model).
+name = "f1_mixteam"
+
+[ball_state]
+method = "blend"
+sources = ["supervised", "kickoff_wait"]
+
+[team]
+method = "blend"
+sources = [{ method = "supervised", regime = "mix_lf" }]
+
+[decode]
+method = "switch_cost"
+turnover_cost = 5.0
+stop_cost = 12.0
+restart_cost = 12.0
+snap_start_s = 3.0
+snap_end_s = 3.0

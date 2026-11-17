@@ -1,0 +1,20 @@
+# Task 14: ball-state evidence of V1's LightGBM and the temporal network at weights 1.0 / 1.0
+# (M5 is 0.5 / 0.5, M6 is 0 / 1); team evidence and decoder of V1.
+name = "bs_w11"
+
+[ball_state]
+method = "blend"
+sources = ["supervised", "sequence", "kickoff_wait"]
+weights = [1.0, 1.0, 1.0]
+
+[team]
+method = "blend"
+sources = ["supervised"]
+
+[decode]
+method = "switch_cost"
+turnover_cost = 5.0
+stop_cost = 12.0
+restart_cost = 12.0
+snap_start_s = 3.0
+snap_end_s = 3.0

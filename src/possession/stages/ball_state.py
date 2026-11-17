@@ -126,7 +126,12 @@ def blend(match: Match, sources: list = ("stoppage_evidence",), weights: list = 
 
 @register("ball_state", "supervised")
 def supervised(
-    match: Match, labels: str = "raw", data: str = "idsse", regime: str = "none", tta: bool = False
+    match: Match,
+    labels: str = "raw",
+    data: str = "idsse",
+    regime: str = "none",
+    tta: bool = False,
+    features: str = "v1",
 ) -> np.ndarray:
     """P(play is live) = 1 - P(D) from the supervised model in solution/ (LightGBM, open data).
 
@@ -134,13 +139,15 @@ def supervised(
     supervised track's own choice), "tau<s>" or "controlled<s>" (possession/supervised.py).
     `data` names the training matches: "idsse" (the submitted model), "idsse+pff" or "pff".
     `regime` the ball regime of the training matches (possession/regime.py: "none", "auto_lf",
-    "auto_ml", "mix_lf"); `tta` averages in the prediction with home and away exchanged. The
-    first call downloads the open training data and trains the model; it is cached afterwards.
+    "auto_ml", "mix_lf"); `tta` averages in the prediction with home and away exchanged;
+    `features` the feature set ("v1", the submitted model's, or "v1+team": plus the block of
+    possession/team_features.py). The first call downloads the open training data and trains the
+    model; it is cached afterwards.
     """
     from possession import fusion
     from possession import supervised as model
 
-    probs = model.probabilities(match, labels, data, regime=regime, tta=tta)
+    probs = model.probabilities(match, labels, data, regime=regime, tta=tta, features=features)
     return fusion.class_evidence("ball_state", *probs.T)
 
 
@@ -170,3 +177,41 @@ def sequence(match: Match) -> np.ndarray:
     from possession import sequence as network
 
     return network.p_alive(match)
+
+
+@register("ball_state", "blend_by_ball")
+def blend_by_ball(
+    match: Match,
+    sources: list = ("supervised", "sequence", "kickoff_wait"),
+    weights_seen: list = (0.7, 0.3, 1.0),
+    weights_unseen: list = (0.0, 1.0, 1.0),
+) -> np.ndarray:
+    """Weighted sum of the log-odds of several ball_state sources, weights set by ball visibility.
+
+    `weights_seen` apply on frames where the tracking has the ball, `weights_unseen` where it has
+    not (task 14): the frame model has seen stoppages with the ball in view in its training
+    matches, the temporal network reads long stretches without a ball better. Sources as in
+    `blend`. A frame on which no source has a value counts as even odds.
+    """
+    from possession import fusion
+
+    seen = fusion.blend(match, "ball_state", sources, weights_seen)
+    unseen = fusion.blend(match, "ball_state", sources, weights_unseen)
+    out = np.where(match.ball_seen, seen, unseen)
+    return np.where(np.isnan(out), 0.5, out).astype(np.float32)
+
+
+@register("ball_state", "sequence_ensemble")
+def sequence_ensemble(match: Match, seeds: list = (0, 1, 2), tta: bool = False) -> np.ndarray:
+    """P(play is live) from the temporal network averaged over training seeds and/or views.
+
+    The mean stoppage log-odds of the networks of `sequence` trained with each training seed in
+    `seeds` (seed 0 is the committed network; the others are in models/sequence_seeds/, task 19,
+    possession/sequence_seeds.py). With `tta` each network's prediction of the match with home and
+    away exchanged is averaged in too. `seeds = [0]` without `tta` is exactly `sequence`.
+    Training matches are scored out of fold, as for `sequence`. Nothing is trained here.
+    """
+    from possession import sequence_seeds
+
+    z = sequence_seeds.z_dead(match, tuple(int(s) for s in seeds), bool(tta))
+    return 1.0 / (1.0 + np.exp(z))

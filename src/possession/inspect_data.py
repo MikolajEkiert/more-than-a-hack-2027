@@ -14,7 +14,7 @@ tests/test_inspect.py, instead of writing an ad-hoc script that loads the data.
 import numpy as np
 
 import possession_metrics as pm
-from possession import features
+from possession import features, scoring
 from possession.match import AWAY, HOME, Match
 from possession.scoring import _runs
 
@@ -413,6 +413,207 @@ def regime(match: Match, labels, truth=None) -> dict:
         "running_given_true_dead_tracked": _rate(running, true & seen),
         "running_given_true_live_tracked": _rate(running, live & seen),
     }
+
+
+# -- the ball regime of a tracking as one vector of statistics (task 14) -------------------------
+
+STILL_M_S = 1.0  # a tracked ball slower than this is lying still (placed for a restart, say)
+REAPPEAR_S = 0.5  # how the ball reappears after a long gap: its first half second in view
+VECTOR_QUANTILES = (25, 50, 75, 90)
+SHORT_STOPPAGE_S = 3.0
+MIN_LIVE_GAP_S = 1.0  # play without a ball for less than this is a dropout, counted apart
+END_WINDOW_S = 3.0  # "before the restart": the last seconds of a stoppage
+STILL_RUN_S = 0.5  # a ball lying still for this long counts as placed
+PER_MINUTES = 10.0  # counts are given per 10 minutes
+
+
+def _round(value) -> float | None:
+    return None if value is None else round(float(value), 4)
+
+
+def _quantiles_of(values, name: str) -> dict:
+    """{name_pQQ: value} for VECTOR_QUANTILES, None where there is nothing to summarise."""
+    values = np.asarray(values, dtype=np.float64)
+    values = values[np.isfinite(values)]
+    return {
+        f"{name}_p{q}": (round(float(np.percentile(values, q)), 3) if len(values) else None)
+        for q in VECTOR_QUANTILES
+    }
+
+
+def _per_10(count: int, frames: int, fps: int) -> float | None:
+    return round(count / (frames / fps / 60.0) * PER_MINUTES, 3) if frames else None
+
+
+def _first_seconds(values: np.ndarray, seen: np.ndarray, start: int, frames: int) -> np.ndarray:
+    """`values` over the first `frames` frames from `start` while the ball stays tracked."""
+    window = seen[start : start + frames]
+    keep = np.cumprod(window).astype(bool)
+    return values[start : start + frames][keep]
+
+
+def regime_vector(match: Match, labels=None) -> dict:
+    """The ball regime of a tracking as one flat dict of aggregates, comparable across matches.
+
+    Without labels, from the tracking alone: how much of the time the ball is missing and in
+    stretches of what length, where a tracked ball is (outside the pitch, lying still, moving),
+    how often it lies still for STILL_RUN_S or more, how it reappears after a long gap, and how
+    often players run with and without a ball.
+    With `labels` (a prediction or a truth, H/A/D, X ignored), the same split by play and
+    stoppage: P(ball missing | play) and P(ball missing | stoppage); the lengths of stoppages and
+    of stretches of play without a ball of MIN_LIVE_GAP_S or more, split into those that run into
+    a stoppage (`lead_in`), those that follow one (`lead_out`, the ball picked up late after the
+    restart) and the rest (`free`); where inside stoppages (of SHORT_STOPPAGE_S or more for the
+    per-stoppage shares) the ball is in view: first, middle, last third; lying still, slow,
+    moving, outside the pitch; at the start, at the restart, lying still in the END_WINDOW_S
+    before the restart, and for how long without a break before it; possession density and dead
+    share. Shares are of frames unless named per stoppage; counts are per 10 minutes. No frame
+    index, no per-frame value: safe on the competition match.
+    """
+    fps, half, n = match.fps, match.half, match.n_frames
+    graded, seen = match.graded, match.ball_seen
+    speed = features.ball_kinematics(match)["speed"]
+    edge = features.ball_edge_distance(match)
+    with np.errstate(invalid="ignore"):
+        still = seen & (speed < STILL_M_S)
+        moving = seen & (speed >= MOVING_M_S) & (edge >= 0)
+        outside = seen & (edge < 0)
+    running = _running(match)
+    tracked = graded & seen
+    n_graded = int(graded.sum())
+
+    gaps = _graded_runs(~seen, half)
+    seconds = np.array([(b - a) / fps for a, b in gaps], dtype=np.float64)
+    long = seconds >= LONG_GAP_S
+    window = max(int(round(REAPPEAR_S * fps)), 1)
+    reappear_speed, reappear_outside = [], []
+    for (_, b), is_long in zip(gaps, long, strict=True):
+        if not is_long or b >= n or half[b] == 0:
+            continue
+        values = _first_seconds(speed, seen, b, window)
+        if len(values) and np.isfinite(values).any():
+            reappear_speed.append(float(np.nanmedian(values)))
+            reappear_outside.append(bool(edge[b] < 0))
+    reappear_speed = np.asarray(reappear_speed, dtype=np.float64)
+    still_runs = [
+        (b - a) / fps for a, b in _graded_runs(still, half) if b - a >= STILL_RUN_S * fps
+    ]  # fmt: skip
+    nearest, _ = features.nearest_player(match)
+    out = {
+        "ball_missing": _round(_rate(~seen, graded)),
+        "gaps_under_1s_per_10min": _per_10(int((seconds < 1.0).sum()), n_graded, fps),
+        "gaps_1_3s_per_10min": _per_10(int(((seconds >= 1.0) & ~long).sum()), n_graded, fps),
+        "gaps_over_3s_per_10min": _per_10(int(long.sum()), n_graded, fps),
+        **_quantiles_of(seconds[long], "long_gap_s"),
+        "outside_given_tracked": _round(_rate(outside, tracked)),
+        "still_given_tracked": _round(_rate(still, tracked)),
+        "moving_given_tracked": _round(_rate(moving, tracked)),
+        "still_runs_per_10min": _per_10(len(still_runs), n_graded, fps),
+        "still_run_s_p50": round(float(np.median(still_runs)), 3) if still_runs else None,
+        **_quantiles_of(nearest[tracked], "nearest_player_m"),
+        "running_given_missing": _round(_rate(running, graded & ~seen)),
+        "running_given_tracked": _round(_rate(running, tracked)),
+        "reappear_speed_p50": (
+            round(float(np.median(reappear_speed)), 3) if len(reappear_speed) else None
+        ),
+        "reappear_moving": _share(int((reappear_speed >= MOVING_M_S).sum()), len(reappear_speed)),
+        "reappear_still": _share(int((reappear_speed < STILL_M_S).sum()), len(reappear_speed)),
+        "reappear_outside": _share(int(np.sum(reappear_outside)), len(reappear_outside)),
+    }
+    if labels is None:
+        return out
+
+    labels = np.asarray(labels).astype("<U1")
+    valid = graded & (labels != "X")
+    live = valid & np.isin(labels, ("H", "A"))
+    dead = valid & (labels == "D")
+    n_live = int(live.sum())
+    stops = _graded_runs(dead, half)
+    stop_s = np.array([(b - a) / fps for a, b in stops], dtype=np.float64)
+
+    # play without a ball for a second or more (shorter dropouts are counted apart): does the
+    # stretch run into a stoppage, follow one, or stand free?
+    kinds = {"lead_in": [], "lead_out": [], "free": []}
+    dropouts = 0
+    for a, b in _graded_runs(live & ~seen, half):
+        if b - a < MIN_LIVE_GAP_S * fps:
+            dropouts += 1
+        elif b < n and dead[b]:
+            kinds["lead_in"].append(b - a)
+        elif a > 0 and dead[a - 1]:
+            kinds["lead_out"].append(b - a)
+        else:
+            kinds["free"].append(b - a)
+    every = [length for lengths in kinds.values() for length in lengths]
+
+    thirds = np.zeros((3, 2))  # [tracked frames, frames] in the first, middle, last third
+    starts_seen, ends_seen, ends_still, any_seen, counted = 0, 0, 0, 0, 0
+    end_runs = []  # seconds the ball has been in view without a break when play restarts
+    before = int(round(END_WINDOW_S * fps))
+    for a, b in stops:
+        length = b - a
+        if length < 3:
+            continue
+        cuts = [a, a + int(round(length / 3)), a + int(round(2 * length / 3)), b]
+        for i in range(3):
+            thirds[i] += (seen[cuts[i] : cuts[i + 1]].sum(), cuts[i + 1] - cuts[i])
+        if length >= SHORT_STOPPAGE_S * fps:
+            counted += 1
+            starts_seen += bool(seen[a])
+            ends_seen += bool(seen[b - 1])
+            any_seen += bool(seen[a:b].any())
+            ends_still += bool(still[max(b - before, a) : b].sum() >= fps * STILL_RUN_S)
+            if seen[b - 1]:
+                end_runs.append(int(np.cumprod(seen[a:b][::-1]).sum()) / fps)
+    visible = [
+        (b - a) / fps
+        for a, b in _graded_runs(dead & seen, half)
+        if b - a >= 2  # one frame says nothing about a stretch
+    ]
+    footprint = scoring.footprint(labels, half, fps)
+    out.update(
+        {
+            "dead_share": _round(_rate(dead, valid)),
+            "possessions_per_live_minute": footprint["possessions_per_live_minute"],
+            "missing_given_live": _round(_rate(~seen, live)),
+            "missing_given_dead": _round(_rate(~seen, dead)),
+            **_quantiles_of(nearest[live & seen], "nearest_player_live_m"),
+            "running_given_live": _round(_rate(running, live)),
+            "running_given_dead_missing": _round(_rate(running, dead & ~seen)),
+            "running_given_dead_tracked": _round(_rate(running, dead & seen)),
+            "stoppages_per_10min": _per_10(len(stops), n_graded, fps),
+            **_quantiles_of(stop_s, "stoppage_s"),
+            "short_stoppage_share": _share(int((stop_s < SHORT_STOPPAGE_S).sum()), len(stop_s)),
+            "live_dropouts_per_10min_live": _per_10(dropouts, n_live, fps),
+            "live_gaps_per_10min_live": _per_10(len(every), n_live, fps),
+            **_quantiles_of(np.asarray(every, dtype=np.float64) / fps, "live_gap_s"),
+            **{
+                f"live_missing_{kind}": _share(int(np.sum(lengths)), n_live)
+                for kind, lengths in kinds.items()
+            },
+            "free_gap_s_p50": (
+                round(float(np.median(kinds["free"])) / fps, 3) if kinds["free"] else None
+            ),
+            "lead_in_s_p50": (
+                round(float(np.median(kinds["lead_in"])) / fps, 3) if kinds["lead_in"] else None
+            ),
+            "dead_tracked_first_third": _share(int(thirds[0, 0]), int(thirds[0, 1])),
+            "dead_tracked_middle_third": _share(int(thirds[1, 0]), int(thirds[1, 1])),
+            "dead_tracked_last_third": _share(int(thirds[2, 0]), int(thirds[2, 1])),
+            "dead_tracked_still": _round(_rate(still, dead & seen)),
+            "dead_tracked_slow": _round(_rate(seen & ~still & ~moving & ~outside, dead & seen)),
+            "dead_tracked_moving": _round(_rate(moving, dead & seen)),
+            "dead_tracked_outside": _round(_rate(outside, dead & seen)),
+            "stoppage_any_tracked": _share(any_seen, counted),
+            "stoppage_start_tracked": _share(starts_seen, counted),
+            "stoppage_end_tracked": _share(ends_seen, counted),
+            "stoppage_end_still": _share(ends_still, counted),
+            "end_visible_s_p50": (round(float(np.median(end_runs)), 3) if end_runs else None),
+            "dead_visible_per_stoppage": _share(len(visible), len(stops)),
+            **_quantiles_of(visible, "dead_visible_s"),
+        }
+    )
+    return out
 
 
 def label_stats(labels, half: np.ndarray, fps: int) -> dict:

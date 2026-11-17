@@ -49,7 +49,12 @@ def match():
 
 
 def fake_probabilities(
-    match: Match, labels: str = "raw", data: str = "idsse", regime: str = "none", tta: bool = False
+    match: Match,
+    labels: str = "raw",
+    data: str = "idsse",
+    regime: str = "none",
+    tta: bool = False,
+    features: str = "v1",
 ) -> np.ndarray:
     """(n, 3) P(H), P(A), P(D) standing in for the supervised model: a deterministic function of
     the tracking (dead where the ball is not tracked, else the team of the nearest player)."""
@@ -83,3 +88,43 @@ def stub_supervised_model(request, monkeypatch):
 
     monkeypatch.setattr(supervised, "probabilities", fake_probabilities)
     monkeypatch.setattr(sequence, "predictions", fake_sequence_logits)
+    from possession import sequence_seeds
+
+    monkeypatch.setattr(sequence_seeds, "network", fake_seed_network)
+    monkeypatch.setattr(sequence_seeds, "_features", fake_seed_features)
+
+
+def tiny_network(n_in: int, seed: int = 1) -> dict:
+    """A small random network in the layout of `sequence.load` (2 blocks, width 4)."""
+    rng = np.random.default_rng(seed)
+    width = 4
+    net = {
+        "ds": 5,
+        "clip": 5.0,
+        "dilations": (1, 2),
+        "mean": np.zeros(n_in),
+        "std": np.ones(n_in),
+        "flag": np.array([0]),
+        "proj_w": rng.normal(size=(1, n_in + 1, width)),
+        "proj_b": rng.normal(size=width),
+        "head_w": rng.normal(size=(1, width, 2)),
+        "head_b": rng.normal(size=2),
+    }
+    for j in range(2):
+        net[f"w{j}"] = rng.normal(size=(3, width, width)) * 0.3
+        net[f"b{j}"] = rng.normal(size=width) * 0.1
+    return net
+
+
+def fake_seed_network(seed: int) -> dict:
+    """Stands in for `sequence_seeds.network`: a tiny network per training seed."""
+    return tiny_network(3, seed=100 + int(seed))
+
+
+def fake_seed_features(match: Match, swapped: bool) -> np.ndarray:
+    """Stands in for the package's features: ball position (mirrored in the swapped view) and
+    whether the ball is tracked."""
+    x, y = match.ball[:, 0] / 50.0, match.ball[:, 1] / 30.0
+    if swapped:
+        x = -x
+    return np.column_stack([x, y, match.ball_seen.astype(float)])

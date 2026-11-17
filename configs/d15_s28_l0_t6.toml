@@ -1,0 +1,18 @@
+# Task 15, rule D family: version 4's evidence with stoppage plus restart cost 28, line snap 0 s, turnover cost 6.
+name = "d15_s28_l0_t6"
+
+[ball_state]
+method = "blend"
+sources = ["sequence", "kickoff_wait"]
+
+[team]
+method = "blend"
+sources = [{ method = "supervised", features = "v1+team" }]
+
+[decode]
+method = "switch_cost"
+turnover_cost = 6.0
+stop_cost = 16.0
+restart_cost = 12.0
+snap_start_s = 3.0
+snap_end_s = 3.0

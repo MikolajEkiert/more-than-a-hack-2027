@@ -1,0 +1,343 @@
+{
+  "evidence": {
+    "base": "label_free",
+    "configs": [
+      "configs/hybrid_supervised.toml",
+      "configs/unsup_v2.toml"
+    ],
+    "fitted": {
+      "dead_tracked_first_third": 0.1323,
+      "dead_tracked_last_third": 0.3071,
+      "dead_tracked_middle_third": 0.1697,
+      "dead_tracked_outside": 0.2045,
+      "dead_tracked_still": 0.3693,
+      "end_visible_s_p50": 7.5467,
+      "live_gap_s_p50": 5.2733,
+      "live_gap_s_p90": 7.92,
+      "live_missing_free": 0.0413,
+      "live_missing_lead_in": 0.0236,
+      "missing_given_dead": 0.7969,
+      "missing_given_live": 0.0681,
+      "nearest_player_live_m_p50": 1.833,
+      "nearest_player_live_m_p90": 5.9047,
+      "outside_given_tracked": 0.0378,
+      "possession_agreement": 0.564,
+      "reappear_speed_p50": 7.3783,
+      "still_given_tracked": 0.0667,
+      "still_runs_per_10min": 7.105,
+      "stoppage_end_still": 0.3519,
+      "stoppage_end_tracked": 0.4257,
+      "stoppage_start_tracked": 0.4842,
+      "team_agreement": 0.8644,
+      "team_margin": 0.7347
+    },
+    "games": [
+      "metrica-sg1",
+      "metrica-sg2",
+      "metrica-sg3"
+    ],
+    "grids": {
+      "fixed": {
+        "free_gap_s": [
+          4.0,
+          9.0
+        ],
+        "placed_jitter_m": 0.05
+      },
+      "play": {
+        "ball_offset_m": [
+          1.0,
+          1.5,
+          2.0,
+          2.5
+        ],
+        "lead_in_fraction": [
+          0.25,
+          0.5
+        ],
+        "lost_ball_share": [
+          0.05,
+          0.08
+        ],
+        "reacquire_s": [
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      "start": {
+        "ball_offset_m": 1.5,
+        "lead_in_fraction": 0.3,
+        "lost_ball_share": 0.07,
+        "reacquire_s": [
+          0.0,
+          1.0
+        ]
+      },
+      "stoppages": {
+        "carried_ball_s": [
+          [
+            0.0,
+            0.0
+          ],
+          [
+            2.0,
+            10.0
+          ]
+        ],
+        "placed_ball_prob": [
+          0.35,
+          0.65
+        ],
+        "placed_ball_s": [
+          [
+            1.0,
+            4.0
+          ],
+          [
+            2.0,
+            8.0
+          ]
+        ],
+        "visible_dead": [
+          [
+            0.25,
+            [
+              0.5,
+              2.0
+            ]
+          ],
+          [
+            0.5,
+            [
+              0.5,
+              3.0
+            ]
+          ],
+          [
+            0.9,
+            [
+              1.0,
+              6.0
+            ]
+          ]
+        ]
+      }
+    },
+    "loss": 0.1565,
+    "loss_by_group": {
+      "ball in view in stoppages": 0.142,
+      "ball lost in play": 0.144,
+      "ball lost in stoppages": 0.206,
+      "hardness": 0.103,
+      "tracked ball": 0.241
+    },
+    "loss_definition": {
+      "distance": "|a - b| / max(|a|, |b|, floor); floor 1 for seconds and metres, 0.5 for counts, 0.05 for shares",
+      "groups": {
+        "ball in view in stoppages": [
+          "dead_tracked_still",
+          "dead_tracked_outside",
+          "stoppage_end_still",
+          "end_visible_s_p50"
+        ],
+        "ball lost in play": [
+          "missing_given_live",
+          "live_missing_free",
+          "live_missing_lead_in",
+          "live_gap_s_p50",
+          "live_gap_s_p90"
+        ],
+        "ball lost in stoppages": [
+          "missing_given_dead",
+          "dead_tracked_first_third",
+          "dead_tracked_middle_third",
+          "dead_tracked_last_third",
+          "stoppage_start_tracked",
+          "stoppage_end_tracked"
+        ],
+        "hardness": [
+          "possession_agreement",
+          "team_agreement",
+          "team_margin"
+        ],
+        "tracked ball": [
+          "still_given_tracked",
+          "still_runs_per_10min",
+          "reappear_speed_p50",
+          "outside_given_tracked",
+          "nearest_player_live_m_p50",
+          "nearest_player_live_m_p90"
+        ]
+      },
+      "weights": {
+        "hardness": 2.0
+      }
+    },
+    "runners_up": [
+      {
+        "loss": 0.1566,
+        "overrides": {
+          "ball_offset_m": 1.0,
+          "carried_ball_s": [
+            2.0,
+            10.0
+          ],
+          "free_gap_s": [
+            4.0,
+            9.0
+          ],
+          "lead_in_fraction": 0.25,
+          "lost_ball_share": 0.05,
+          "placed_ball_prob": 0.35,
+          "placed_ball_s": [
+            1.0,
+            4.0
+          ],
+          "placed_jitter_m": 0.05,
+          "reacquire_s": [
+            0.0,
+            1.0
+          ],
+          "visible_dead_prob": 0.25,
+          "visible_dead_s": [
+            0.5,
+            2.0
+          ]
+        }
+      },
+      {
+        "loss": 0.1638,
+        "overrides": {
+          "ball_offset_m": 1.0,
+          "carried_ball_s": [
+            2.0,
+            10.0
+          ],
+          "free_gap_s": [
+            4.0,
+            9.0
+          ],
+          "lead_in_fraction": 0.5,
+          "lost_ball_share": 0.05,
+          "placed_ball_prob": 0.35,
+          "placed_ball_s": [
+            1.0,
+            4.0
+          ],
+          "placed_jitter_m": 0.05,
+          "reacquire_s": [
+            0.0,
+            0.0
+          ],
+          "visible_dead_prob": 0.25,
+          "visible_dead_s": [
+            0.5,
+            2.0
+          ]
+        }
+      },
+      {
+        "loss": 0.1638,
+        "overrides": {
+          "ball_offset_m": 1.0,
+          "carried_ball_s": [
+            2.0,
+            10.0
+          ],
+          "free_gap_s": [
+            4.0,
+            9.0
+          ],
+          "lead_in_fraction": 0.25,
+          "lost_ball_share": 0.08,
+          "placed_ball_prob": 0.35,
+          "placed_ball_s": [
+            1.0,
+            4.0
+          ],
+          "placed_jitter_m": 0.05,
+          "reacquire_s": [
+            0.0,
+            1.0
+          ],
+          "visible_dead_prob": 0.25,
+          "visible_dead_s": [
+            0.5,
+            2.0
+          ]
+        }
+      }
+    ],
+    "seeds": [
+      0
+    ],
+    "target_competition_match": {
+      "dead_tracked_first_third": 0.28,
+      "dead_tracked_last_third": 0.2866,
+      "dead_tracked_middle_third": 0.1966,
+      "dead_tracked_outside": 0.1483,
+      "dead_tracked_still": 0.3484,
+      "end_visible_s_p50": 5.9,
+      "live_gap_s_p50": 5.96,
+      "live_gap_s_p90": 10.432,
+      "live_missing_free": 0.0482,
+      "live_missing_lead_in": 0.0182,
+      "missing_given_dead": 0.7456,
+      "missing_given_live": 0.077,
+      "nearest_player_live_m_p50": 1.893,
+      "nearest_player_live_m_p90": 6.373,
+      "outside_given_tracked": 0.0419,
+      "possession_agreement": 0.4562,
+      "reappear_speed_p50": 12.027,
+      "still_given_tracked": 0.1,
+      "still_runs_per_10min": 15.486,
+      "stoppage_end_still": 0.3459,
+      "stoppage_end_tracked": 0.4962,
+      "stoppage_start_tracked": 0.6917,
+      "team_agreement": 0.8288,
+      "team_margin": 0.678
+    }
+  },
+  "name": "match_regime",
+  "params": {
+    "ball_offset_m": 1.0,
+    "ball_smooth_s": 0.6,
+    "carried_ball_s": [
+      2.0,
+      10.0
+    ],
+    "free_gap_s": [
+      4.0,
+      9.0
+    ],
+    "lead_in_fraction": 0.5,
+    "lead_in_s": [
+      2.0,
+      8.0
+    ],
+    "lost_ball_share": 0.05,
+    "placed_ball_prob": 0.35,
+    "placed_ball_s": [
+      1.0,
+      4.0
+    ],
+    "placed_jitter_m": 0.05,
+    "players_visible": 20.5,
+    "reacquire_s": [
+      0.0,
+      1.0
+    ],
+    "visible_dead_prob": 0.25,
+    "visible_dead_s": [
+      0.5,
+      2.0
+    ]
+  },
+  "source": "Fitted by `scripts/regime_compare.py fit` so that the ball regime of the degraded external matches, read through version 1's labels, matches the same statistics of the competition match (how often the ball is lost in play and in stoppages, where and how it is seen inside stoppages, placed balls, how it reappears, how far it is from the nearest player), together with the agreement of our two pipelines (as for `match_like`). Uses version 1's predicted labels of the match, no label of the match and no published score."
+}

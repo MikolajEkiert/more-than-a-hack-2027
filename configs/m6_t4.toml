@@ -1,0 +1,18 @@
+# Task 14: M6's evidence (temporal network ball state, V1 team) with a turnover cost of 4.0.
+name = "m6_t4"
+
+[ball_state]
+method = "blend"
+sources = ["sequence", "kickoff_wait"]
+
+[team]
+method = "blend"
+sources = ["supervised"]
+
+[decode]
+method = "switch_cost"
+turnover_cost = 4.0
+stop_cost = 12.0
+restart_cost = 12.0
+snap_start_s = 3.0
+snap_end_s = 3.0
