@@ -44,8 +44,8 @@ spec. Where a doc and that file disagree, the file is right.
    match data, the parsed match cache (`.cache/<game>_match.npz`), submission CSVs or notebook
    outputs, and never write code whose output shows raw rows. Work through tools that print
    aggregates (`possession run`, `possession inspect`, `pytest`). The technical block for this,
-   the data guard (`scripts/agent_guard.json`), is OFF by the owner's decision
-   (docs/DECISIONS.md, 2026-11-14); the rule holds without it. Open data about other games kept
+   the data guard (`scripts/agent_guard.json`), is ON by the owner's decision
+   (docs/DECISIONS.md, 2026-11-17); a blocked call carries a reason, do not work around it. Open data about other games kept
    under `.cache/` (`idsse/`, `pff/`, `external/`) is not restricted.
 
 ## 3. Repository map

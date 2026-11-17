@@ -1,0 +1,5 @@
+data/
+.cache/
+submission/
+evaluation/results/*.csv
+!evaluation/results/baseline_*.csv
