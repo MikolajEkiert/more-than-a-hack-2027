@@ -1,5 +1,5 @@
 ---
-status: doing
+status: done
 owner: MikolajEkiert (Claude)
 stage: all
 ---
@@ -36,9 +36,13 @@ repository.
       dropped" extended.
 - [x] `scripts/compare_teams.py` (moved from a scratch script) measured and reported. The PFF
       comparison is in the report: V4 0.820, Barca 0.743, Sigue 0.767, 16/16 against each.
-- [ ] Owner's decision between version 4 and version 5. Then push, PR (`no-auto`) and `/submit`
-      from `main`.
+- [x] Owner's decision between version 4 and version 5: version 4 (2026-11-17). Pushed as public
+      PR #21 (`no-auto`), merged; `/submit` from `main`.
 
 ## Log
 - 2026-11-15: merged, verified, documented. The seed networks of task 19 stay uncommitted, since
   no t19 configuration is submitted.
+- 2026-11-17: owner chose version 4. Public `main` merged with the review fixes of tasks 11-13
+  (conflicts in DECISIONS.md and FUSION.md, both sides kept), PR #21 merged. On `main`:
+  `make check` green (225 tests); version 4 regenerated twice and from a fresh clone with an
+  empty cache, sha256 `6fd87cc4…` each time. GitHub CI did not start (account billing lock).
