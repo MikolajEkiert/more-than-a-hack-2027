@@ -10,7 +10,8 @@ Repository: https://github.com/MikolajEkiert/more-than-a-hack-2027
 | Regenerate | `make submit CONFIG=configs/c14_best.toml TEAM=culers` (section 7) |
 | Produced from | commit `8517976` on `main` (2026-11-17); `make submit` ran the pipeline twice, the second time from a fresh parse, got the same sha256, and the official `evaluation/validate_submission.py` reports the file valid |
 
-Every number below comes from `docs/DECISIONS.md`, docs/FUSION.md and the run files in
+The document uploaded with the form is the three-page summary `docs/TECHNICAL_SUMMARY.md`; this
+full report holds the evidence behind it. Every number below comes from `docs/DECISIONS.md`, docs/FUSION.md and the run files in
 `experiments/runs/`. Version 1, the configuration we had ready before (`configs/hybrid_supervised.toml`,
 sha256 `25f146c0...`), stays reproducible on the branch `fallback/hybrid`; section 5 says why we
 moved on and which of our own rules would not have.
